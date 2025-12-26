@@ -1,0 +1,6 @@
+// hello_world.jaru
+// ----------------
+// Basic "Hello World" example in JARU.
+// This program prints a message to the console.
+
+print("Hello, world!")
