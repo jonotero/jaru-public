@@ -1,0 +1,28 @@
+// Factorial_ForLoop
+// Created: 2025-07-21
+// Author: Jon Otero
+// Version: 1.0.0
+
+
+// Factorial Calculator with User Input
+
+println("Enter a number to calculate its factorial:")
+
+// Capture the user input from the console
+var userInput = readLine()
+var number = userInput.toInt() // Convert the input to an integer
+var factorial = 1
+
+// Check if the number is negative
+if (number < 0) then
+    println("Error: Factorial is not defined for negative numbers.")
+elsif (number == 0) then
+    println("The factorial of 0 is 1.")
+else
+    // Calculate the factorial using a for loop
+    for (var i = 1; i <= number; i++)
+        factorial = factorial * i
+    end
+
+    println("The factorial of ", number, " is ", factorial)
+end
