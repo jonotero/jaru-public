@@ -1,0 +1,48 @@
+name: ✨ Feature Request
+description: Suggest an improvement or a new feature for JARU or the JARU IDE
+title: "[Feature]: "
+labels: ["feature"]
+assignees: []
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for your suggestion!
+        Please describe your idea as clearly as possible.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem Description
+      description: What problem are you trying to solve?
+      placeholder: |
+        Describe the limitation or inconvenience you are facing.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed_solution
+    attributes:
+      label: Proposed Solution
+      description: How would you like this to work?
+      placeholder: |
+        Describe your idea or proposed behavior.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: Have you considered any alternative solutions or workarounds?
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional Context
+      description: Any extra information, screenshots, or examples.
+    validations:
+      required: false
