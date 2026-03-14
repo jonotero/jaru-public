@@ -70,7 +70,7 @@ You can run, modify, and experiment with these examples using your JARU environm
 ## 📚 Documentation and Resources
 
 - Official documentation:  
-  https://jarulang.com/documentation/guia/
+  https://jarulang.com/en/docs/guia/introduccion/
 
 - JARU website and downloads:  
   https://jarulang.com
