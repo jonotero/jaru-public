@@ -1,0 +1,71 @@
+use LED
+use Math
+
+const WIDTH  = 8
+const HEIGHT = 8
+
+func xy(x, y)
+    return y * WIDTH + x
+end
+
+var strip = LED.new(17, 64)
+strip.setBrightness(255)
+
+var t = 0.0
+
+while (true)
+
+    var ca = Math.cos(t)
+    var sa = Math.sin(t)
+
+    for (var y = 0; y < HEIGHT; y++)
+        for (var x = 0; x < WIDTH; x++)
+
+            // Coordenadas centradas
+            var fx = x - 3.5
+            var fy = y - 3.5
+
+            // Rotación del punto
+            var rx = (fx * ca) - (fy * sa)
+            var ry = (fx * sa) + (fy * ca)
+
+            // Cruz giratoria
+            var v = 0
+
+            if (Math.abs(rx) < 0.7) then
+                v = 1
+            end
+
+            if (Math.abs(ry) < 0.7) then
+                v = 1
+            end
+
+            if (v == 1) then
+
+                // color arcoíris que cambia con la rotación
+                var hue = Math.floor((t * 80 + (rx + ry) * 20))
+
+                while (hue >= 360)
+                    hue = hue - 360
+                end
+
+                while (hue < 0)
+                    hue = hue + 360
+                end
+
+                strip.setHSV(xy(x,y), hue, 255, 255)
+
+            else
+                // fondo oscuro
+                strip.setPixel(xy(x,y), 0, 0, 10)
+            end
+
+        end
+    end
+
+    strip.show()
+    pause(40)
+
+    t = t + 0.12
+
+end

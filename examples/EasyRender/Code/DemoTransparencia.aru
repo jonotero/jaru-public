@@ -1,0 +1,276 @@
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// TestTransparency.aru
+// Version 1.0
+// ---------------------------------------------------------------------------------------------
+// Test de TRANSPARENCIA con refracción MÍNIMA o NULA.
+//
+// Esta escena usa un índice de refracción muy cercano a 1.0 para que
+// los rayos pasen casi sin desviarse. Así es fácil verificar si la
+// transparencia funciona: deberías ver las esferas de atrás a través
+// de la esfera transparente, casi sin distorsión.
+//
+// CÓMO VERIFICAR:
+// ✓ FUNCIONA si: Ves las esferas de colores A TRAVÉS de la esfera transparente
+// ✗ NO FUNCIONA si: La esfera transparente aparece opaca, negra, o no ves nada detrás
+//
+// Jon Otero Fernandez (c) 2022-2025
+/////////////////////////////////////////////////////////////////////////////////////////////////
+use Display
+use Math
+
+var draw = Display.draw
+
+import "Globals"
+import "Vector"
+import "Ray"
+import "Camera"
+import "Material"
+import "Light"
+import "Sphere"
+import "Ground"
+import "Patterns"
+import "World"
+
+// =============================================================================
+// Configuración - Resolución baja para render rápido
+// =============================================================================
+var ANCHO = 400
+var ALTO = 300
+
+var mundo = nil
+
+// =============================================================================
+// IMPORTANTE: Modificar el índice de refracción para prueba
+// Ponemos un valor MUY cercano a 1.0 para que casi no haya distorsión
+// =============================================================================
+// NU[1] = 1.02  // Casi sin refracción (descomentar si se quiere probar)
+
+// =============================================================================
+// Funciones auxiliares
+// =============================================================================
+func InitScreen()
+    Display.orientation(1)
+    Display.open(ANCHO, ALTO)
+    Display.mode(1)
+    Display.update()
+end
+
+func rgb(r, g, b)
+    return (r << 16) | (g << 8) | b
+end
+
+func ClampColor(valor)
+    if (valor < 0) then
+        return 0
+    elsif (valor > 255) then
+        return 255
+    end;
+    return int(valor)
+end
+
+// =============================================================================
+// ESCENA DE TEST: Esfera transparente con esferas opacas detrás
+// =============================================================================
+func CrearEscena()
+    mundo = World()
+
+    // -------------------------------------------------------------------------
+    // CÁMARA: Vista frontal clara
+    // -------------------------------------------------------------------------
+    var posObservador = Vector(0, 60, -200)
+    var puntoMira = Vector(0, 40, 100)
+    mundo.camara = Camera(posObservador, puntoMira, ANCHO, ALTO, 50)
+
+    // -------------------------------------------------------------------------
+    // SUELO: Ajedrezado simple para referencia visual
+    // -------------------------------------------------------------------------
+    var suelo = Ground()
+    suelo.mat = Material(Vector(200, 200, 200), 0.05, 0.1, 10, 0)
+    suelo.mat2 = Material(Vector(80, 80, 80), 0.05, 0.1, 10, 0)
+    suelo.patron = Checkered
+    suelo.patternSize = 40
+    mundo.SetSuelo(suelo)
+
+    // -------------------------------------------------------------------------
+    // ESFERA TRANSPARENTE (en el centro, delante)
+    // Alta transparencia (kt=0.85), muy poca reflexión
+    // -------------------------------------------------------------------------
+    var esferaTransparente = Sphere(Vector(0, 50, 0), 45)
+    esferaTransparente.mat = Material(
+        Vector(255, 255, 255),  // Color base blanco
+        0.02,                   // kr: Casi nada de reflexión
+        0.3,                    // ks: Algo de especular para que se vea
+        40,                     // ps: Brillo
+        0.85                    // kt: 85% transparente
+    )
+    mundo.AddEsfera(esferaTransparente)
+
+    // -------------------------------------------------------------------------
+    // ESFERA ROJA - Detrás a la izquierda
+    // -------------------------------------------------------------------------
+    var esferaRoja = Sphere(Vector(-70, 40, 120), 35)
+    esferaRoja.mat = Material(
+        Vector(255, 50, 50),    // Rojo brillante
+        0.1,
+        0.5,
+        30,
+        0.0                     // Opaca
+    )
+    mundo.AddEsfera(esferaRoja)
+
+    // -------------------------------------------------------------------------
+    // ESFERA VERDE - Detrás en el centro
+    // -------------------------------------------------------------------------
+    var esferaVerde = Sphere(Vector(0, 45, 150), 40)
+    esferaVerde.mat = Material(
+        Vector(50, 255, 50),    // Verde brillante
+        0.1,
+        0.5,
+        30,
+        0.0                     // Opaca
+    )
+    mundo.AddEsfera(esferaVerde)
+
+    // -------------------------------------------------------------------------
+    // ESFERA AZUL - Detrás a la derecha
+    // -------------------------------------------------------------------------
+    var esferaAzul = Sphere(Vector(70, 35, 100), 30)
+    esferaAzul.mat = Material(
+        Vector(50, 100, 255),   // Azul brillante
+        0.1,
+        0.5,
+        30,
+        0.0                     // Opaca
+    )
+    mundo.AddEsfera(esferaAzul)
+
+    // -------------------------------------------------------------------------
+    // ESFERA AMARILLA - Pequeña, muy atrás (para ver profundidad)
+    // -------------------------------------------------------------------------
+    var esferaAmarilla = Sphere(Vector(20, 30, 200), 25)
+    esferaAmarilla.mat = Material(
+        Vector(255, 255, 50),   // Amarillo brillante
+        0.1,
+        0.5,
+        30,
+        0.0                     // Opaca
+    )
+    mundo.AddEsfera(esferaAmarilla)
+
+    // -------------------------------------------------------------------------
+    // LUCES
+    // -------------------------------------------------------------------------
+    var luz1 = Light(
+        Vector(-150, 300, -100),
+        Vector(0, 0, 0),
+        Vector(1.0, 1.0, 1.0),
+        500
+    )
+    mundo.AddLuz(luz1)
+
+    var luz2 = Light(
+        Vector(100, 200, -50),
+        Vector(0, 0, 0),
+        Vector(0.9, 0.9, 1.0),
+        300
+    )
+    mundo.AddLuz(luz2)
+
+    // -------------------------------------------------------------------------
+    // AMBIENTE
+    // -------------------------------------------------------------------------
+    mundo.cielo = Vector(135, 180, 220)
+    mundo.luzAmbiental = Vector(0.2, 0.2, 0.2)
+
+    println("")
+    println("╔════════════════════════════════════════════════════════════╗")
+    println("║         TEST DE TRANSPARENCIA (refracción mínima)          ║")
+    println("╠════════════════════════════════════════════════════════════╣")
+    println("║ Escena:                                                    ║")
+    println("║  • 1 esfera TRANSPARENTE al frente (85% transparencia)     ║")
+    println("║  • 4 esferas OPACAS detrás: ROJA, VERDE, AZUL, AMARILLA    ║")
+    println("║  • Suelo ajedrezado                                        ║")
+    println("╠════════════════════════════════════════════════════════════╣")
+    println("║ CÓMO VERIFICAR:                                            ║")
+    println("║                                                            ║")
+    println("║ ✓ FUNCIONA si:                                             ║")
+    println("║   - Puedes VER las esferas de colores A TRAVÉS             ║")
+    println("║     de la esfera transparente                              ║")
+    println("║   - El suelo ajedrezado se ve a través                     ║")
+    println("║                                                            ║")
+    println("║ ✗ NO FUNCIONA si:                                          ║")
+    println("║   - La esfera transparente es OPACA o NEGRA                ║")
+    println("║   - No ves NADA a través de ella                           ║")
+    println("╚════════════════════════════════════════════════════════════╝")
+    println("")
+    println("Índice de refracción actual: ", NU[1])
+    println("(Para menos distorsión, cambiar NU[1] a 1.02 en Globals.aru)")
+    println("")
+end
+
+// =============================================================================
+// Renderizar
+// =============================================================================
+func Renderizar()
+    var lastPercent = -1
+
+    for (var y = 0; y < ALTO; y++)
+        var percent = int((y * 100) / ALTO)
+        if (percent != lastPercent and percent % 10 == 0) then
+            println("  Progreso: ", percent, "%")
+            lastPercent = percent
+        end;
+
+        for (var x = 0; x < ANCHO; x++)
+            var color = mundo.Trazar(x, y)
+            var r = ClampColor(color.x)
+            var g = ClampColor(color.y)
+            var b = ClampColor(color.z)
+            draw.color(rgb(r, g, b))
+            draw.setPixel(x, y)
+        end;
+        Display.update()
+    end;
+end
+
+// =============================================================================
+// PROGRAMA PRINCIPAL
+// =============================================================================
+println("")
+println("═══════════════════════════════════════════════════════════════════")
+println("         EASY RENDER - Test de Transparencia")
+println("═══════════════════════════════════════════════════════════════════")
+println("")
+println("Resolución: ", ANCHO, " x ", ALTO)
+println("")
+
+// Opción: Reducir el índice de refracción para prueba sin distorsión
+// Descomenta la siguiente línea para casi ninguna refracción:
+// NU[1] = 1.02
+
+InitScreen()
+CrearEscena()
+
+println("Renderizando...")
+println("")
+
+var inicio = clock()
+Renderizar()
+var fin = clock()
+
+var tiempoSeg = (fin - inicio) / 1000
+
+println("")
+println("═══════════════════════════════════════════════════════════════════")
+println("  Render completado en ", tiempoSeg, " segundos")
+println("═══════════════════════════════════════════════════════════════════")
+println("")
+println("RESULTADO:")
+println("  • ¿Puedes ver las esferas de colores a través de la transparente?")
+println("  • ¿El suelo se ve a través de la esfera?")
+println("")
+println("Si NO ves nada a través, hay un BUG en el cálculo de transparencia.")
+println("")
+
+pause(15000)
+

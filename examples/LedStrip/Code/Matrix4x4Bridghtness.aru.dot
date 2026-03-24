@@ -1,0 +1,204 @@
+digraph{
+    node [shape=box]
+    0 [label="0 Root\l--------"]
+    0 -> 2
+    2 [label="2 Use LED"]
+    2 -> 
+    2 [label="2 Use Math"]
+    2 -> 
+    0 [label="0 Root\l--------"]
+    0 -> 3
+    3 [label="3 Constant\l--------"]
+    3 -> 4
+    4 [label="4 Integer\l8"]
+    0 [label="0 Root\l--------"]
+    0 -> 5
+    5 [label="5 Constant\l--------"]
+    5 -> 6
+    6 [label="6 Integer\l8"]
+    0 [label="0 Root\l--------"]
+    0 -> 7
+    7 [label="7 Constant\l--------"]
+    7 -> 9
+    9 [label="9 Infix Expr\l*"]
+    9 -> 8
+    8 [label="8 Identifier\lWIDTH"]
+    9 [label="9 Infix Expr\l*"]
+    9 -> 10
+    10 [label="10 Identifier\lHEIGHT"]
+    0 [label="0 Root\l--------"]
+    0 -> 11
+    11 [label="11 Var Declare\l-----------------\lstrip"]
+    13 [label ="11 Var : strip"]
+    11 -> 13
+    13 [label="13 Infix Dot"]
+    13 -> 12
+    12 [label="12 Identifier\lLED"]
+    13 -> 15
+    15 [label="15 Call\lnew()"]
+    15 -> 16
+    16 [label="16 Integer\l17"]
+    15 -> 17
+    17 [label="17 Identifier\lNUM_LEDS"]
+    0 [label="0 Root\l--------"]
+    0 -> 18
+    18 [label="18 Expression"]
+    18 -> 19
+    19 [label="19 Function Declare\l-----------------------\lxy"]
+    19 -> 22
+    22 [label="22 Block"]
+    22 -> 23
+    23 [label="23 Return"]
+    23 -> 27
+    27 [label="27 Infix Expr\l+"]
+    27 -> 25
+    25 [label="25 Infix Expr\l*"]
+    25 -> 24
+    24 [label="24 Identifier\ly"]
+    25 [label="25 Infix Expr\l*"]
+    25 -> 26
+    26 [label="26 Identifier\lWIDTH"]
+    27 [label="27 Infix Expr\l+"]
+    27 -> 28
+    28 [label="28 Identifier\lx"]
+    0 [label="0 Root\l--------"]
+    0 -> 29
+    29 [label="29 Var Declare\l-----------------\lt"]
+    30 [label ="29 Var : t"]
+    29 -> 30
+    30 [label="30 Float\l0.000000"]
+    0 [label="0 Root\l--------"]
+    0 -> 31
+    31 [label="31 While"]
+    31 -> 33
+    33 [label="33 Block"]
+    33 -> 34
+    34 [label="34 Var Declare\l-----------------\lbrightness"]
+    36 [label ="34 Var : brightness"]
+    34 -> 36
+    36 [label="36 Infix Dot"]
+    36 -> 35
+    35 [label="35 Identifier\lMath"]
+    36 -> 38
+    38 [label="38 Call\lfloor()"]
+    38 -> 46
+    46 [label="46 Infix Expr\l*"]
+    46 -> 44
+    44 [label="44 Infix Expr\l+"]
+    44 -> 40
+    40 [label="40 Infix Dot"]
+    40 -> 39
+    39 [label="39 Identifier\lMath"]
+    40 -> 42
+    42 [label="42 Call\lsin()"]
+    42 -> 43
+    43 [label="43 Identifier\lt"]
+    44 [label="44 Infix Expr\l+"]
+    44 -> 45
+    45 [label="45 Integer\l1"]
+    46 [label="46 Infix Expr\l*"]
+    46 -> 47
+    47 [label="47 Float\l127.500000"]
+    33 [label="33 Block"]
+    33 -> 48
+    48 [label="48 For Loop\l------------"]
+    48 -> 49
+    49 [label="49 Var Declare\l-----------------\ly"]
+    50 [label ="49 Var : y"]
+    49 -> 50
+    50 [label="50 Integer\l0"]
+    48 -> 52
+    52 [label="52 Infix Expr\l<"]
+    52 -> 51
+    51 [label="51 Identifier\ly"]
+    52 [label="52 Infix Expr\l<"]
+    52 -> 53
+    53 [label="53 Identifier\lHEIGHT"]
+    48 -> 54
+    54 [label="54 Postfix Expr\l++"]
+    54 -> 55
+    55 [label="55 Identifier\ly"]
+    48 -> 56
+    56 [label="56 Block"]
+    56 -> 57
+    57 [label="57 For Loop\l------------"]
+    57 -> 58
+    58 [label="58 Var Declare\l-----------------\lx"]
+    59 [label ="58 Var : x"]
+    58 -> 59
+    59 [label="59 Integer\l0"]
+    57 -> 61
+    61 [label="61 Infix Expr\l<"]
+    61 -> 60
+    60 [label="60 Identifier\lx"]
+    61 [label="61 Infix Expr\l<"]
+    61 -> 62
+    62 [label="62 Identifier\lWIDTH"]
+    57 -> 63
+    63 [label="63 Postfix Expr\l++"]
+    63 -> 64
+    64 [label="64 Identifier\lx"]
+    57 -> 65
+    65 [label="65 Block"]
+    65 -> 66
+    66 [label="66 Expression"]
+    66 -> 68
+    68 [label="68 Infix Dot"]
+    68 -> 67
+    67 [label="67 Identifier\lstrip"]
+    68 -> 70
+    70 [label="70 Call\lsetPixel()"]
+    70 -> 72
+    72 [label="72 Call\lxy()"]
+    72 -> 73
+    73 [label="73 Identifier\lx"]
+    72 -> 74
+    74 [label="74 Identifier\ly"]
+    70 -> 75
+    75 [label="75 Integer\l0"]
+    70 -> 76
+    76 [label="76 Integer\l0"]
+    70 -> 77
+    77 [label="77 Integer\l255"]
+    33 [label="33 Block"]
+    33 -> 78
+    78 [label="78 Expression"]
+    78 -> 80
+    80 [label="80 Infix Dot"]
+    80 -> 79
+    79 [label="79 Identifier\lstrip"]
+    80 -> 82
+    82 [label="82 Call\lsetBrightness()"]
+    82 -> 83
+    83 [label="83 Identifier\lbrightness"]
+    33 [label="33 Block"]
+    33 -> 84
+    84 [label="84 Expression"]
+    84 -> 86
+    86 [label="86 Infix Dot"]
+    86 -> 85
+    85 [label="85 Identifier\lstrip"]
+    86 -> 88
+    88 [label="88 Call\lshow()"]
+    33 [label="33 Block"]
+    33 -> 89
+    89 [label="89 Expression"]
+    89 -> 91
+    91 [label="91 Call\lpause()"]
+    91 -> 92
+    92 [label="92 Integer\l30"]
+    33 [label="33 Block"]
+    33 -> 93
+    93 [label="93 Expression"]
+    93 -> 95
+    95 [label="95 Assign\l-------------\l="]
+    95 -> 94
+    94 [label="94 Identifier\lt"]
+    95 -> 98
+    98 [label="98 Infix Expr\l+"]
+    98 -> 97
+    97 [label="97 Identifier\lt"]
+    98 [label="98 Infix Expr\l+"]
+    98 -> 99
+    99 [label="99 Float\l0.080000"]
+}

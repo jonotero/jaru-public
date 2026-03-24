@@ -1,0 +1,86 @@
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Camera.aru
+// Version 1.2
+// ---------------------------------------------------------------------------------------------
+// Conversion del codigo en C++ del motor de ray tracing Easy Render.
+//
+// Easy Render (c) Jon Otero Fernandez 1996.
+// Jon Otero Fernandez (c) Noviembre 2022
+/////////////////////////////////////////////////////////////////////////////////////////////////
+use Math
+import "Ray"
+class Camera : Ray
+    def init()
+        this.centro=Vector();
+        this.horizontal=Vector();
+        this.vertical=Vector();
+        this.pixels_x=0;
+        this.pixels_y=0;
+        this.pixels_x_div2=0;
+        this.pixels_y_div2=0;
+    end;
+
+    def init(vDesde ,vHacia ,pix_x ,pix_y ,anf)
+        var distFocal
+        super.init(vDesde,vHacia)
+
+        if((pix_x>0)and(pix_y>0)) then
+            this.pixels_x=pix_x;
+            this.pixels_y=pix_y;
+            this.pixels_x_div2=pix_x/2;
+            this.pixels_y_div2=pix_y/2;
+            this.angulo_focal=anf;
+
+            if (this.angulo_focal< MIN_FOCAL) then
+                this.angulo_focal=MIN_FOCAL;
+            elsif (this.angulo_focal>MAX_FOCAL) then
+                this.angulo_focal=MAX_FOCAL;
+            end;
+            this.angulo_focal=this.angulo_focal*PI/360;
+
+            // Obtener distancia focal
+            distFocal=this.pixels_x*Math.cos(this.angulo_focal)/(2*Math.sin(this.angulo_focal))
+        end;
+        // El centro del plano de la imagen se obtiene a partir de dato de situacion y la distancia focal
+        this.centro=super.ObtenerPunto(distFocal);
+        // Obtener los vectores horizontal y vertical del plano de la imagen
+        if (NONULO(this.x) or NONULO(this.z) ) then
+            this.horizontal=!(Vector(-this.z,0,this.x))
+        else
+            this.horizontal= Vector(1,0,0);
+        end;
+
+        this.vertical=this.horizontal & Vector(this.x,this.y,this.z);
+        // Corregir la relacion de aspecto en el vector vertical
+        //this.vertical=this.vertical*((3.0*this.pixels_x)/(4.0 *this.pixels_y))
+        //this.vertical=this.vertical*(this.pixels_y / this.pixels_x)
+    end;
+
+    // -----------------------------------------------------------------------------------------
+    // Obtiene el rayo que parte de la posicion del observador y pasa por el pixel especificado
+    // -----------------------------------------------------------------------------------------
+    def PorPixel(x,y)
+        var h,v,p;  // vectores
+        var auxRay; // Rayo
+
+        // Multiplicar los vectores horizontal y vertical por la distancia
+        // en horizontal del pixel al centro de la pantalla
+        h=this.horizontal*(x-this.pixels_x_div2)
+        v=this.vertical*(y-this.pixels_y_div2)
+
+        // Se calcula la posicion del pixel en el espacio como suma del
+        // centro de la pantalla mas los vectores obtenidos
+        p=this.centro+h-v;
+
+        //println("p : ",p.x," v",p.y," z",p.z," Centro :", this.centro.x)
+
+        // El rayo a calcular parte de la misma posicion que el rayo de la camara
+        // y su vector director pasa por el punto obtenido.
+        auxRay=Ray(this.pos,p)
+        return auxRay;
+    end;
+
+end;
+
+
+

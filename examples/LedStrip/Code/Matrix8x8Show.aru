@@ -1,0 +1,260 @@
+use LED
+
+const WIDTH  = 8
+const HEIGHT = 8
+
+func xy(x, y)
+    return y * WIDTH + x
+end
+
+func pixel(strip, x, y, r, g, b)
+    if (x < 0 or x >= WIDTH or y < 0 or y >= HEIGHT) then
+        return
+    end
+
+    strip.setPixel(xy(x, y), r, g, b)
+end
+
+func cls(strip)
+    strip.clear()
+end
+
+func abs(v)
+    if (v < 0) then
+        return -v
+    end
+    return v
+end
+
+func drawBorder(strip, r, g, b)
+    for (var x = 0; x < WIDTH; x++)
+        pixel(strip, x, 0, r, g, b)
+        pixel(strip, x, HEIGHT - 1, r, g, b)
+    end
+
+    for (var y = 1; y < HEIGHT - 1; y++)
+        pixel(strip, 0, y, r, g, b)
+        pixel(strip, WIDTH - 1, y, r, g, b)
+    end
+end
+
+func flash(strip, r, g, b, ms)
+    for (var y = 0; y < HEIGHT; y++)
+        for (var x = 0; x < WIDTH; x++)
+            pixel(strip, x, y, r, g, b)
+        end
+    end
+    strip.show()
+    pause(ms)
+end
+
+func drawHorizontalBar(strip, yy, r, g, b)
+    for (var x = 0; x < WIDTH; x++)
+        pixel(strip, x, yy, r, g, b)
+    end
+end
+
+func drawVerticalBar(strip, xx, r, g, b)
+    for (var y = 0; y < HEIGHT; y++)
+        pixel(strip, xx, y, r, g, b)
+    end
+end
+
+func drawCross(strip, cx, cy, r, g, b)
+    for (var x = 0; x < WIDTH; x++)
+        pixel(strip, x, cy, r, g, b)
+    end
+
+    for (var y = 0; y < HEIGHT; y++)
+        pixel(strip, cx, y, r, g, b)
+    end
+end
+
+func drawChecker(strip, offset)
+    for (var y = 0; y < HEIGHT; y++)
+        for (var x = 0; x < WIDTH; x++)
+            if (((x + y + offset) % 2) == 0) then
+                pixel(strip, x, y, 120, 0, 80)
+            else
+                pixel(strip, x, y, 0, 80, 120)
+            end
+        end
+    end
+end
+
+func drawBurst(strip, radius, r, g, b)
+    var cx = 3
+    var cy = 3
+
+    for (var y = 0; y < HEIGHT; y++)
+        for (var x = 0; x < WIDTH; x++)
+            var dx = abs(x - cx)
+            var dy = abs(y - cy)
+
+            if ((dx == radius and dy <= radius) or (dy == radius and dx <= radius)) then
+                pixel(strip, x, y, r, g, b)
+            end
+        end
+    end
+end
+
+func drawRain(strip, step)
+    for (var x = 0; x < WIDTH; x++)
+        var y1 = (step + x) % HEIGHT
+        var y2 = (step + x + 3) % HEIGHT
+        var y3 = (step + x + 5) % HEIGHT
+
+        pixel(strip, x, y1, 0, 120, 40)
+        pixel(strip, x, y2, 0, 40, 120)
+        pixel(strip, x, y3, 120, 20, 0)
+    end
+end
+
+func drawDiamond(strip, radius, r, g, b)
+    var cx = 3
+    var cy = 3
+
+    for (var y = 0; y < HEIGHT; y++)
+        for (var x = 0; x < WIDTH; x++)
+            var d = abs(x - cx) + abs(y - cy)
+            if (d == radius) then
+                pixel(strip, x, y, r, g, b)
+            end
+        end
+    end
+end
+
+var strip = LED.new(17, 64)
+strip.setBrightness(2)
+
+while (true)
+
+    // -------------------------------------------------
+    // 1) Arranque brutal
+    // -------------------------------------------------
+    flash(strip, 120, 120, 120, 80)
+    flash(strip, 0, 0, 0, 50)
+    flash(strip, 120, 40, 0, 80)
+    flash(strip, 0, 0, 0, 50)
+    flash(strip, 0, 80, 120, 80)
+    flash(strip, 0, 0, 0, 80)
+
+    // -------------------------------------------------
+    // 2) Barrido rojo horizontal
+    // -------------------------------------------------
+    for (var y = 0; y < HEIGHT; y++)
+        cls(strip)
+        drawBorder(strip, 0, 0, 20)
+        drawHorizontalBar(strip, y, 120, 0, 0)
+        strip.show()
+        pause(90)
+    end
+
+    // -------------------------------------------------
+    // 3) Barrido azul vertical
+    // -------------------------------------------------
+    for (var x = 0; x < WIDTH; x++)
+        cls(strip)
+        drawBorder(strip, 20, 0, 0)
+        drawVerticalBar(strip, x, 0, 40, 120)
+        strip.show()
+        pause(90)
+    end
+
+    // -------------------------------------------------
+    // 4) Damero rave
+    // -------------------------------------------------
+    for (var i = 0; i < 8; i++)
+        cls(strip)
+        drawChecker(strip, i)
+        strip.show()
+        pause(120)
+    end
+
+    // -------------------------------------------------
+    // 5) Cruz energética diagonal
+    // -------------------------------------------------
+    for (var i = 0; i < 8; i++)
+        cls(strip)
+        drawBorder(strip, 0, 20, 40)
+        drawCross(strip, i, i, 120, 120, 120)
+        strip.show()
+        pause(100)
+    end
+
+    for (var i = 7; i >= 0; i--)
+        cls(strip)
+        drawBorder(strip, 40, 0, 20)
+        drawCross(strip, i, 7 - i, 120, 40, 0)
+        strip.show()
+        pause(100)
+    end
+
+    // -------------------------------------------------
+    // 6) Explosión concéntrica
+    // -------------------------------------------------
+    cls(strip)
+    drawBurst(strip, 0, 120, 120, 120)
+    strip.show()
+    pause(100)
+
+    cls(strip)
+    drawBurst(strip, 1, 120, 0, 0)
+    strip.show()
+    pause(100)
+
+    cls(strip)
+    drawBurst(strip, 2, 120, 80, 0)
+    strip.show()
+    pause(100)
+
+    cls(strip)
+    drawBurst(strip, 3, 120, 120, 0)
+    strip.show()
+    pause(100)
+
+    cls(strip)
+    drawBurst(strip, 4, 0, 80, 120)
+    strip.show()
+    pause(160)
+
+    // -------------------------------------------------
+    // 7) Diamantes de energía
+    // -------------------------------------------------
+    for (var i = 0; i < 7; i++)
+        cls(strip)
+        drawDiamond(strip, i, 120, 0, 80)
+        strip.show()
+        pause(90)
+    end
+
+    for (var i = 6; i >= 0; i--)
+        cls(strip)
+        drawDiamond(strip, i, 0, 120, 80)
+        strip.show()
+        pause(90)
+    end
+
+    // -------------------------------------------------
+    // 8) Lluvia de color
+    // -------------------------------------------------
+    for (var t = 0; t < 20; t++)
+        cls(strip)
+        drawRain(strip, t)
+        strip.show()
+        pause(90)
+    end
+
+    // -------------------------------------------------
+    // 9) Final loco
+    // -------------------------------------------------
+    for (var i = 0; i < 4; i++)
+        flash(strip, 120, 0, 0, 60)
+        flash(strip, 0, 120, 0, 60)
+        flash(strip, 0, 0, 120, 60)
+        flash(strip, 120, 120, 120, 60)
+        flash(strip, 0, 0, 0, 40)
+    end
+
+end
+

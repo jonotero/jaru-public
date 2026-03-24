@@ -1,0 +1,31 @@
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// RTMaterial.aru
+// Version 1.2
+// ---------------------------------------------------------------------------------------------
+// Conversion del codigo en C++ del motor de ray tracing Easy Render.
+//
+// Easy Render (c) Jon Otero Fernandez 1996.
+// Jon Otero Fernandez (c) Noviembre 2022
+/////////////////////////////////////////////////////////////////////////////////////////////////
+import "Globals"
+import "Vector.aru"
+
+class Material
+    def init()
+        this.difusa=Vector();
+        this.kr=0;  // Reflexion
+        this.ks=0;  // Especular
+        this.ps=0;  // Especular , power
+        this.kt=0;  // Transparencia
+    end;
+
+    def init(difusa,kReflex,kSpecular,pSpecular,kTrans)
+        this.difusa=difusa.copy();
+        this.kr=kReflex;    // Reflexion
+        this.ks=kSpecular;  // Especular
+        this.ps=pSpecular;  // Especular , power
+        this.kt=kTrans;     // Transparencia
+    end;
+
+end;
+

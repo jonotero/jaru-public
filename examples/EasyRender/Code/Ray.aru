@@ -1,0 +1,142 @@
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// RTRay.aru
+// Version 1.4 - CORREGIDO
+// ---------------------------------------------------------------------------------------------
+// Conversion del codigo en C++ del motor de ray tracing Easy Render.
+// CORRECCIÓN: Arreglado el cálculo de refracción (eliminado doble ajuste de normal,
+//             añadido offset para evitar auto-intersección).
+//
+// Easy Render (c) Jon Otero Fernandez 1996.
+// Jon Otero Fernandez (c) Noviembre 2022
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+import "Vector"
+
+enum tMedio
+    Aire=0,
+    Cristal=1,
+end;
+
+class Ray : Vector
+    def init()
+        this.pos=Vector();
+        this.medio=tMedio.Aire;
+    end;
+
+    def init(v1)
+        super.init(v1);
+        this.pos=Vector();
+    end;
+
+    def init(vdesde,vhacia)
+        super.init(!(vhacia-vdesde))
+        this.pos=vdesde.copy();
+        this.medio=tMedio.Aire;
+    end;
+
+    def init(vDir,vPos,med)
+        super.init(vDir)
+        this.pos=vPos.copy();
+        this.medio=med;
+    end;
+
+    // Devuelve un punto a una distancia dada sobre el rayo
+    def ObtenerPunto(distancia)
+        var v2=this.pos+Vector(this.x,this.y,this.z)*distancia;
+        return (v2)
+    end
+
+    // Devuelve la distancia del punto al origen del rayo suponiendo que el punto esté situado
+    // sobre el rayo
+    def Distancia(v1)
+        var d;
+        switch ( this.Dominante() )
+            case 0: if (NONULO(this.x)) then
+                        d=(v1.x-this.pos.x)/this.x;
+                    else
+                        d=0.0;
+                    end;
+            case 1: if (NONULO(this.y)) then
+                        d=(v1.y-this.pos.y)/this.y;
+                    else
+                        d=0.0;
+                    end;
+            case 2: if (NONULO(this.z)) then
+                        d=(v1.z-this.pos.z)/this.z;
+                    else
+                        d=0.0;
+                    end;
+        end
+        return(d);
+    end
+
+    // ------------------------------------------------------------------
+    // Calcula el rayo reflejado con respecto a una normal en un punto
+    // Devuelve un nuevo rayo reflejado
+    // ------------------------------------------------------------------
+    def Reflejado(normal, punto)
+        var v = Vector(this.x, this.y, this.z);
+
+        // Fórmula de reflexión: R = I - 2(I·N)N
+        v = v - normal * (2 * (v | normal))
+        v = !v  // Normalizar
+
+        // Offset del punto para evitar auto-intersección
+        var puntoOffset = punto + normal * (EPSILON * 2)
+
+        var auxRayo = Ray(v, puntoOffset, this.medio);
+        return auxRayo;
+    end;
+
+    // ------------------------------------------------------------------
+    // Calcula el rayo refractado (Ley de Snell)
+    //
+    // IMPORTANTE: La normal DEBE estar orientada hacia el lado desde
+    // donde viene el rayo (esto se hace en World.TrazarRayo).
+    //
+    // Parámetros:
+    //   normal: vector normal YA AJUSTADA (apunta hacia el rayo incidente)
+    //   punto: punto de intersección
+    //   nuevoMedio: medio al que entra el rayo
+    //
+    // Devuelve: nuevo rayo refractado, o nil si hay reflexión total interna
+    // ------------------------------------------------------------------
+    def Refractado(normal, punto, nuevoMedio)
+    var n1 = NU[this.medio]
+    var n2 = NU[nuevoMedio]
+    var eta = n1 / n2
+
+    var I = Vector(this.x, this.y, this.z)
+
+    // Copia local de la normal que podemos modificar
+    var N = normal.copy()
+
+    var cosI = -(I | N)
+
+    // Si la normal apunta en dirección incorrecta, invertirla
+    if (cosI < 0) then
+        N = -N
+        cosI = -cosI
+    end;
+
+    var sin2T = eta * eta * (1.0 - cosI * cosI)
+
+    if (sin2T > 1.0) then
+        return nil  // Reflexión total interna
+    end;
+
+    var cosT = sqrt(1.0 - sin2T)
+
+    // Fórmula vectorial de refracción
+    var T = I * eta + N * (eta * cosI - cosT)
+    T = !T
+
+    // Offset en dirección de transmisión para evitar auto-intersección
+    var puntoOffset = punto + T * (EPSILON * 4)
+
+    var rayoRefractado = Ray(T, puntoOffset, nuevoMedio)
+    return rayoRefractado
+end;
+
+end;
+
