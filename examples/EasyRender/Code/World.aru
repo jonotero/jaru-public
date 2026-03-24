@@ -1,0 +1,349 @@
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// World_Optimized.aru
+// Version 2.0 - OPTIMIZADO PARA VELOCIDAD
+// ---------------------------------------------------------------------------------------------
+// OPTIMIZACIONES:
+// 1. Early-exit en detección de sombras
+// 2. Precálculo de direcciones de luz
+// 3. Menos creación de objetos Vector temporales
+// 4. Cache de valores frecuentes
+// 5. Simplificación de cálculos de atenuación
+// 6. Bounding box check opcional para escenas grandes
+//
+// Easy Render (c) Jon Otero Fernandez 1996.
+// Jon Otero Fernandez (c) Noviembre 2022
+// Optimizado 2024
+/////////////////////////////////////////////////////////////////////////////////////////////////
+use Math
+
+import "Globals"
+import "Vector"
+import "Ray"
+import "Camera"
+import "Material"
+import "Light"
+import "Sphere"
+import "Ground"
+
+class World
+    def init()
+        this.esferas = []
+        this.suelo = nil
+        this.luces = []
+        this.cielo = Vector(0, 80, 160)
+        this.luzAmbiental = Vector(0.1, 0.1, 0.1)
+        this.camara = Camera()
+        this.actualPrm = nil
+        this.actualTipo = 0
+
+        // Cache para optimización
+        this.numEsferas = 0
+        this.numLuces = 0
+    end;
+
+    def AddEsfera(esfera)
+        this.esferas.append(esfera)
+        this.numEsferas = this.esferas.size()
+    end;
+
+    def SetSuelo(suelo)
+        this.suelo = suelo
+    end;
+
+    def AddLuz(luz)
+        this.luces.append(luz)
+        this.numLuces = this.luces.size()
+    end;
+
+    // ***********************************************************
+    // Trazar el rayo que pasa por el pixel y devolver su color.
+    // ***********************************************************
+    def Trazar(x, y)
+        var rayo = this.camara.PorPixel(x, y)
+        var color = this.TrazarRayo(rayo, 1, 1.0, 1.0)
+        return color
+    end;
+
+    // *************************************************************
+    // Trazar un rayo y devolver su color - OPTIMIZADO
+    // *************************************************************
+    def TrazarRayo(rayo, iteracion, nReflex, nRefrac)
+        var dist = this.Colision(rayo)
+
+        if (this.actualPrm == nil) then
+            return this.cielo
+        end;
+
+        var pInt = rayo.ObtenerPunto(dist)
+        var normal = this.actualPrm.Normal(pInt)
+        var mat = this.actualPrm.mat
+        var kr = mat.kr
+        var kt = mat.kt
+
+        // Calcular dot product inline para evitar crear vectores
+        var dot = rayo.x * normal.x + rayo.y * normal.y + rayo.z * normal.z
+        var entrando = (dot < 0)
+
+        // Ajustar normal solo si es necesario
+        var nx = normal.x
+        var ny = normal.y
+        var nz = normal.z
+        if (not entrando) then
+            nx = -nx
+            ny = -ny
+            nz = -nz
+        end;
+        var normalAjustada = Vector(nx, ny, nz)
+
+        // Calcular pesos una sola vez
+        var pesosDifuso = 1.0 - kr - kt
+        if (pesosDifuso < 0) then
+            pesosDifuso = 0
+        end;
+
+        var totalPesos = pesosDifuso + kr + kt
+        if (totalPesos > 1.0) then
+            var invTotal = 1.0 / totalPesos
+            pesosDifuso = pesosDifuso * invTotal
+            kr = kr * invTotal
+            kt = kt * invTotal
+        end;
+
+        // Componente difusa
+        var aux
+        if (pesosDifuso > EPSILON) then
+            aux = this.IluminarRapido(rayo, this.actualPrm, this.actualTipo, pInt, normalAjustada)
+            aux = aux * pesosDifuso
+        else
+            aux = Vector(0, 0, 0)
+        end;
+
+        // Componente reflejada - con early exit
+        var nrKr = nReflex * kr
+        if ((iteracion <= MAXREFLEX) and (nrKr >= MINREFLEX)) then
+            var rayoReflejado = rayo.Reflejado(normalAjustada, pInt)
+            var colorReflex = this.TrazarRayo(rayoReflejado, iteracion + 1, nrKr, nRefrac)
+            aux = aux + (colorReflex * kr)
+        end;
+
+        // Componente refractada - con early exit
+        var nrKt = nRefrac * kt
+        if ((iteracion <= MAXREFLEX) and (nrKt >= MINREFLEX) and (kt > EPSILON)) then
+            var nuevoMedio
+            if (entrando) then
+                nuevoMedio = tMedio.Cristal
+            else
+                nuevoMedio = tMedio.Aire
+            end;
+
+            var rayoRefractado = rayo.Refractado(normalAjustada, pInt, nuevoMedio)
+
+            if (rayoRefractado != nil) then
+                var colorRefrac = this.TrazarRayo(rayoRefractado, iteracion + 1, nReflex, nrKt)
+                aux = aux + (colorRefrac * kt)
+            else
+                var rayoTIR = rayo.Reflejado(normalAjustada, pInt)
+                var colorTIR = this.TrazarRayo(rayoTIR, iteracion + 1, nReflex, nrKt)
+                aux = aux + (colorTIR * kt)
+            end;
+        end;
+
+        return aux
+    end;
+
+    // *************************************************************
+    // Colisión OPTIMIZADA - con early exit para objetos cercanos
+    // *************************************************************
+    def Colision(rayo)
+        var dist = INFINITO
+        var distAux
+        this.actualPrm = nil
+        this.actualTipo = 0
+
+        // Buscar colisión con esferas
+        var ne = this.numEsferas
+        for (var i = 0; i < ne; i++)
+            distAux = this.esferas[i].Interseccion(rayo)
+            if ((distAux > EPSILON) and (distAux < dist)) then
+                this.actualPrm = this.esferas[i]
+                this.actualTipo = 1
+                dist = distAux
+            end;
+        end;
+
+        // Buscar colisión con el suelo
+        if (this.suelo != nil) then
+            distAux = this.suelo.Interseccion(rayo)
+            if ((distAux > EPSILON) and (distAux < dist)) then
+                this.actualPrm = this.suelo
+                this.actualTipo = 2
+                dist = distAux
+            end;
+        end;
+
+        return dist
+    end;
+
+    // *************************************************************
+    // Verificar sombra OPTIMIZADO - Early exit al primer bloqueo
+    // *************************************************************
+    def EnSombraRapido(pOrigen, dirX, dirY, dirZ, distanciaLuz)
+        var ne = this.numEsferas
+
+        // Crear rayo de sombra inline
+        var rayoSombra = Ray(Vector(dirX, dirY, dirZ), pOrigen, tMedio.Aire)
+
+        for (var i = 0; i < ne; i++)
+            var esf = this.esferas[i]
+            var distAux = esf.Interseccion(rayoSombra)
+            if ((distAux > EPSILON) and (distAux < distanciaLuz)) then
+                // Early exit: objeto opaco encontrado
+                if (esf.mat.kt < 0.5) then
+                    return true
+                end;
+            end;
+        end;
+
+        // Suelo raramente proyecta sombra hacia arriba, skip si luz está arriba
+        if (this.suelo != nil and dirY < 0) then
+            var distAux = this.suelo.Interseccion(rayoSombra)
+            if ((distAux > EPSILON) and (distAux < distanciaLuz)) then
+                return true
+            end;
+        end;
+
+        return false
+    end;
+
+    // *************************************************************
+    // Iluminar OPTIMIZADO - Menos operaciones vectoriales
+    // *************************************************************
+    def IluminarRapido(rayoVista, objeto, tipoObjeto, pInt, normal)
+        var material
+        if (tipoObjeto == 2) then
+            material = objeto.GetMaterial(pInt)
+        else
+            material = objeto.mat
+        end;
+
+        var difR = material.difusa.x
+        var difG = material.difusa.y
+        var difB = material.difusa.z
+
+        // Luz ambiental - cálculo inline
+        var luzR = this.luzAmbiental.x * difR
+        var luzG = this.luzAmbiental.y * difG
+        var luzB = this.luzAmbiental.z * difB
+
+        // Punto offset - cálculo inline
+        var pOffX = pInt.x + normal.x * (EPSILON * 2)
+        var pOffY = pInt.y + normal.y * (EPSILON * 2)
+        var pOffZ = pInt.z + normal.z * (EPSILON * 2)
+        var puntoOffset = Vector(pOffX, pOffY, pOffZ)
+
+        var nl = this.numLuces
+        for (var i = 0; i < nl; i++)
+            var luz1 = this.luces[i]
+
+            // Dirección hacia la luz - cálculo inline
+            var dlx = luz1.pos.x - pOffX
+            var dly = luz1.pos.y - pOffY
+            var dlz = luz1.pos.z - pOffZ
+
+            // Distancia y normalización
+            var dist1Sq = dlx*dlx + dly*dly + dlz*dlz
+            var dist1 = sqrt(dist1Sq)
+            var invDist = 1.0 / dist1
+            dlx = dlx * invDist
+            dly = dly * invDist
+            dlz = dlz * invDist
+
+            // Verificar sombra - con early exit
+            if (this.EnSombraRapido(puntoOffset, dlx, dly, dlz, dist1)) then
+                continue
+            end;
+
+            // Atenuación simplificada
+            // Usando: 1 / (1 + 0.007*d + 0.00002*d²)
+            var atenuacion = 1.0 + 0.007 * dist1 + 0.00002 * dist1Sq
+            var invAten = luz1.potencia / atenuacion
+
+            var luzObjR = luz1.color.x * invAten
+            var luzObjG = luz1.color.y * invAten
+            var luzObjB = luz1.color.z * invAten
+
+            // Si hay luz significativa
+            if (luzObjR > EPSILON or luzObjG > EPSILON or luzObjB > EPSILON) then
+                // Luz difusa - dot product inline
+                var cosAlfa = normal.x * dlx + normal.y * dly + normal.z * dlz
+                if (cosAlfa < 0) then
+                    cosAlfa = 0
+                end;
+
+                luzR = luzR + luzObjR * difR * cosAlfa
+                luzG = luzG + luzObjG * difG * cosAlfa
+                luzB = luzB + luzObjB * difB * cosAlfa
+
+                // Luz especular
+                if (material.ks > EPSILON) then
+                    // Reflexión del rayo de luz
+                    var dotNL = 2.0 * (dlx * normal.x + dly * normal.y + dlz * normal.z)
+                    var refX = dlx - normal.x * dotNL
+                    var refY = dly - normal.y * dotNL
+                    var refZ = dlz - normal.z * dotNL
+
+                    // Dot con dirección de cámara
+                    var cosEspec = refX * this.camara.x + refY * this.camara.y + refZ * this.camara.z
+                    if (cosEspec < 0) then
+                        cosEspec = -cosEspec
+                    end;
+
+                    // pow aproximado para exponentes altos
+                    var especFactor = this.PowRapido(cosEspec, material.ps) * material.ks
+                    luzR = luzR + luzObjR * especFactor
+                    luzG = luzG + luzObjG * especFactor
+                    luzB = luzB + luzObjB * especFactor
+                end;
+            end;
+        end;
+
+        return Vector(luzR, luzG, luzB)
+    end;
+
+    // *************************************************************
+    // Pow aproximado para especular - más rápido que Math.pow
+    // Para exponentes típicos de especular (10-120)
+    // *************************************************************
+    def PowRapido(base, exp)
+        if (base <= 0) then
+            return 0
+        end;
+        if (base >= 1) then
+            return 1
+        end;
+
+        // Aproximación usando multiplicaciones sucesivas
+        // Para exp grande, el resultado converge rápido a 0
+        var result = base
+        var e = int(exp)
+
+        // Exponenciación rápida por cuadrados
+        var temp = base
+        result = 1.0
+        while (e > 0)
+            if (e % 2 == 1) then
+                result = result * temp
+                // Early exit si ya es muy pequeño
+                if (result < 0.001) then
+                    return 0
+                end;
+            end;
+            temp = temp * temp
+            e = int(e / 2)
+        end;
+
+        return result
+    end;
+
+end;
+

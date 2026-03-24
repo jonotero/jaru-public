@@ -1,0 +1,241 @@
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// TestRefraccion.aru
+// Version 1.0
+// ---------------------------------------------------------------------------------------------
+// Demo simple para verificar que la refracción funciona correctamente.
+//
+// CÓMO SABER SI FUNCIONA:
+// ✓ Si funciona: Las rayas del suelo vistas a través de la esfera aparecen CURVADAS
+//                y posiblemente INVERTIDAS (efecto lupa/lente)
+// ✗ Si NO funciona: Las rayas se ven rectas o la esfera es completamente opaca/negra
+//
+// Easy Render (c) Jon Otero Fernandez 1996.
+// Jon Otero Fernandez (c) Noviembre 2022
+/////////////////////////////////////////////////////////////////////////////////////////////////
+use Display
+use Math
+
+var draw = Display.draw
+
+import "Globals"
+import "Vector"
+import "Ray"
+import "Camera"
+import "Material"
+import "Light"
+import "Sphere"
+import "Ground"
+import "Patterns"
+import "World"
+
+// =============================================================================
+// Configuración - Resolución baja para render rápido
+// =============================================================================
+var ANCHO = 320
+var ALTO = 240
+
+var mundo = nil
+
+// =============================================================================
+// Funciones auxiliares
+// =============================================================================
+func InitScreen()
+    Display.orientation(1)
+    Display.open(ANCHO, ALTO)
+    Display.mode(1)
+    Display.update()
+end
+
+func rgb(r, g, b)
+    return (r << 16) | (g << 8) | b
+end
+
+func ClampColor(valor)
+    if (valor < 0) then
+        return 0
+    elsif (valor > 255) then
+        return 255
+    end;
+    return int(valor)
+end
+
+// =============================================================================
+// ESCENA DE TEST: Una esfera de cristal sobre suelo rayado
+// =============================================================================
+func CrearEscenaTest()
+    mundo = World()
+
+    // -------------------------------------------------------------------------
+    // CÁMARA: Mirando hacia la esfera desde un ángulo que muestre el suelo
+    // -------------------------------------------------------------------------
+    var posObservador = Vector(0, 80, -150)
+    var puntoMira = Vector(0, 30, 50)
+    mundo.camara = Camera(posObservador, puntoMira, ANCHO, ALTO, 60)
+
+    // -------------------------------------------------------------------------
+    // SUELO: Rayas gruesas en dirección X (perpendiculares a la vista)
+    // Esto hace muy evidente la distorsión por refracción
+    // -------------------------------------------------------------------------
+    var suelo = Ground()
+    // Material 1: Blanco brillante
+    suelo.mat = Material(Vector(255, 255, 255), 0.1, 0.2, 20, 0)
+    // Material 2: Rojo oscuro (contraste alto para ver bien)
+    suelo.mat2 = Material(Vector(180, 30, 30), 0.1, 0.2, 20, 0)
+    // Patrón de rayas en Z (perpendiculares a la cámara)
+    suelo.patron = StripesZ
+    suelo.patternSize = 30  // Rayas anchas para ver bien la distorsión
+    mundo.SetSuelo(suelo)
+
+    // -------------------------------------------------------------------------
+    // ESFERA DE CRISTAL: Grande y muy transparente
+    // -------------------------------------------------------------------------
+    var esferaCristal = Sphere(Vector(0, 50, 50), 50)
+    esferaCristal.mat = Material(
+        Vector(240, 245, 255),  // Casi blanco con tinte azul muy sutil
+        0.05,                   // kr: Muy poca reflexión (para ver mejor la refracción)
+        0.8,                    // ks: Especular para el brillo
+        60,                     // ps: Brillo medio
+        0.92                    // kt: MUY transparente (92%)
+    )
+    mundo.AddEsfera(esferaCristal)
+
+    // -------------------------------------------------------------------------
+    // ESFERA DE REFERENCIA: Detrás y a la izquierda (para ver inversión)
+    // Si la refracción funciona, esta esfera se verá invertida/distorsionada
+    // a través del cristal
+    // -------------------------------------------------------------------------
+    var esferaReferencia = Sphere(Vector(-60, 35, 150), 35)
+    esferaReferencia.mat = Material(
+        Vector(50, 200, 50),    // Verde brillante
+        0.1,
+        0.5,
+        30,
+        0.0                     // Opaca
+    )
+    mundo.AddEsfera(esferaReferencia)
+
+    // -------------------------------------------------------------------------
+    // ESFERA DE REFERENCIA 2: Detrás y a la derecha
+    // -------------------------------------------------------------------------
+    var esferaRef2 = Sphere(Vector(70, 30, 160), 30)
+    esferaRef2.mat = Material(
+        Vector(200, 50, 200),   // Magenta
+        0.1,
+        0.5,
+        30,
+        0.0                     // Opaca
+    )
+    mundo.AddEsfera(esferaRef2)
+
+    // -------------------------------------------------------------------------
+    // LUZ: Una sola luz fuerte para iluminación clara
+    // -------------------------------------------------------------------------
+    var luz1 = Light(
+        Vector(-100, 300, -100),
+        Vector(0, 0, 0),
+        Vector(1.0, 1.0, 1.0),
+        600
+    )
+    mundo.AddLuz(luz1)
+
+    // Luz secundaria más suave
+    var luz2 = Light(
+        Vector(150, 200, 0),
+        Vector(0, 0, 0),
+        Vector(0.8, 0.8, 0.9),
+        300
+    )
+    mundo.AddLuz(luz2)
+
+    // -------------------------------------------------------------------------
+    // AMBIENTE
+    // -------------------------------------------------------------------------
+    mundo.cielo = Vector(100, 140, 200)  // Cielo azul
+    mundo.luzAmbiental = Vector(0.15, 0.15, 0.15)
+
+    println("")
+    println("╔══════════════════════════════════════════════════════════╗")
+    println("║           TEST DE REFRACCIÓN                             ║")
+    println("╠══════════════════════════════════════════════════════════╣")
+    println("║ Escena:                                                  ║")
+    println("║  • 1 esfera de CRISTAL (92% transparente)                ║")
+    println("║  • 2 esferas opacas detrás (verde y magenta)             ║")
+    println("║  • Suelo con RAYAS rojas/blancas                         ║")
+    println("╠══════════════════════════════════════════════════════════╣")
+    println("║ CÓMO VERIFICAR:                                          ║")
+    println("║                                                          ║")
+    println("║ ✓ FUNCIONA si:                                           ║")
+    println("║   - Las rayas se ven CURVADAS dentro de la esfera        ║")
+    println("║   - Las esferas de atrás se ven DISTORSIONADAS           ║")
+    println("║   - Posible efecto de INVERSIÓN (como una lupa)          ║")
+    println("║                                                          ║")
+    println("║ ✗ NO FUNCIONA si:                                        ║")
+    println("║   - Las rayas se ven RECTAS a través de la esfera        ║")
+    println("║   - La esfera parece opaca o negra                       ║")
+    println("║   - No hay distorsión visible                            ║")
+    println("╚══════════════════════════════════════════════════════════╝")
+    println("")
+end
+
+// =============================================================================
+// Renderizar
+// =============================================================================
+func Renderizar()
+    var lastPercent = -1
+
+    for (var y = 0; y < ALTO; y++)
+        var percent = int((y * 100) / ALTO)
+        if (percent != lastPercent and percent % 10 == 0) then
+            println("  Progreso: ", percent, "%")
+            lastPercent = percent
+        end;
+
+        for (var x = 0; x < ANCHO; x++)
+            var color = mundo.Trazar(x, y)
+            var r = ClampColor(color.x)
+            var g = ClampColor(color.y)
+            var b = ClampColor(color.z)
+            draw.color(rgb(r, g, b))
+            draw.setPixel(x, y)
+        end;
+        Display.update()
+    end;
+end
+
+// =============================================================================
+// PROGRAMA PRINCIPAL
+// =============================================================================
+println("")
+println("═══════════════════════════════════════════════════════════════")
+println("         EASY RENDER - Test de Refracción/Transparencia")
+println("═══════════════════════════════════════════════════════════════")
+println("")
+println("Resolución: ", ANCHO, " x ", ALTO)
+println("Índice de refracción del cristal: ", NU[1])
+println("")
+
+InitScreen()
+CrearEscenaTest()
+
+println("Renderizando...")
+println("")
+
+var inicio = clock()
+Renderizar()
+var fin = clock()
+
+var tiempoSeg = (fin - inicio) / 1000
+
+println("")
+println("═══════════════════════════════════════════════════════════════")
+println("  Render completado en ", tiempoSeg, " segundos")
+println("═══════════════════════════════════════════════════════════════")
+println("")
+println("Observa la esfera de cristal:")
+println("  • ¿Las rayas del suelo se curvan dentro de la esfera?")
+println("  • ¿Las esferas de atrás se ven distorsionadas?")
+println("")
+
+pause(10000)
+
+

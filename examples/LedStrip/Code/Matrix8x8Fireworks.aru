@@ -1,0 +1,203 @@
+use LED
+
+const WIDTH  = 8
+const HEIGHT = 8
+const PARTS  = 8    // partículas por explosión
+const LIFE   = 7    // frames de vida de cada partícula
+
+// ─── Vectores de expansión: 8 radios (igual que un reloj) ────
+var DX = [-1, 0, 1, 1, 1, 0, -1, -1]
+var DY = [-1, -1, -1, 0, 1, 1, 1, 0]
+
+// ─── Estado de partículas ────────────────────────────────────
+var px    = [0, 0, 0, 0, 0, 0, 0, 0]
+var py    = [0, 0, 0, 0, 0, 0, 0, 0]
+var plife = [0, 0, 0, 0, 0, 0, 0, 0]
+
+// ─── Paleta: 7 colores espectaculares ────────────────────────
+//             R    G    B
+var palR = [120,   0,  20, 120,   0, 110,  80]
+var palG = [ 20, 120,  40, 100, 120,   0,  80]
+var palB = [  0,  20, 120,   0, 110, 120,   0]
+
+// ─── Estrellas fijas de fondo (coordenadas) ──────────────────
+var starX = [1, 5, 3, 7, 0, 6, 2, 4]
+var starY = [1, 0, 3, 2, 5, 6, 7, 4]
+
+// ─── Helpers ─────────────────────────────────────────────────
+func xy(x, y)
+    return y * WIDTH + x
+end
+
+func pixel(strip, x, y, r, g, b)
+    if (x < 0 or x >= WIDTH or y < 0 or y >= HEIGHT) then
+        return
+    end
+    strip.setPixel(xy(x, y), r, g, b)
+end
+
+func cls(strip)
+    strip.clear()
+end
+
+// Escala un componente de color según la vida restante (fade suave)
+func fade(val, life)
+    return (val * life) / LIFE
+end
+
+// Fondo: cielo nocturno con estrellas parpadeantes tenues
+func drawSky(strip, twinkle)
+    for (var i = 0; i < 8; i++)
+        var bright = 15
+        if ((i + twinkle) % 3 == 0) then
+            bright = 30
+        end
+        pixel(strip, starX[i], starY[i], 0, 0, bright)
+    end
+end
+
+// ─── Cohete subiendo ─────────────────────────────────────────
+func launchRocket(strip, rx, targetY, twinkle)
+    for (var ry = HEIGHT - 1; ry >= targetY; ry--)
+        cls(strip)
+        drawSky(strip, twinkle)
+
+        // Estela: tres niveles de brillo decreciente
+        if (ry + 3 < HEIGHT) then
+            pixel(strip, rx, ry + 3, 10, 5, 0)
+        end
+        if (ry + 2 < HEIGHT) then
+            pixel(strip, rx, ry + 2, 40, 20, 0)
+        end
+        if (ry + 1 < HEIGHT) then
+            pixel(strip, rx, ry + 1, 90, 50, 0)
+        end
+
+        // Cabeza del cohete: blanco cálido
+        pixel(strip, rx, ry, 120, 120, 80)
+
+        strip.show()
+        pause(75)
+        twinkle = twinkle + 1
+    end
+end
+
+// ─── Flash inicial de detonación ─────────────────────────────
+func detonation(strip, cx, cy, cr, cg, cb, twinkle)
+    // Frame 1: destello blanco central
+    cls(strip)
+    drawSky(strip, twinkle)
+    pixel(strip, cx,     cy,     120, 120, 120)
+    pixel(strip, cx - 1, cy,     cr, cg, cb)
+    pixel(strip, cx + 1, cy,     cr, cg, cb)
+    pixel(strip, cx,     cy - 1, cr, cg, cb)
+    pixel(strip, cx,     cy + 1, cr, cg, cb)
+    strip.show()
+    pause(55)
+
+    // Frame 2: corona más amplia del color
+    cls(strip)
+    drawSky(strip, twinkle)
+    pixel(strip, cx,     cy,     cr, cg, cb)
+    pixel(strip, cx - 1, cy - 1, cr, cg, cb)
+    pixel(strip, cx + 1, cy - 1, cr, cg, cb)
+    pixel(strip, cx - 1, cy + 1, cr, cg, cb)
+    pixel(strip, cx + 1, cy + 1, cr, cg, cb)
+    strip.show()
+    pause(55)
+end
+
+// ─── Inicializar partículas en el punto de explosión ─────────
+func spawnParticles(cx, cy)
+    for (var i = 0; i < PARTS; i++)
+        px[i]    = cx
+        py[i]    = cy
+        plife[i] = LIFE
+    end
+end
+
+// ─── Animar expansión + fade de partículas ───────────────────
+func animateParticles(strip, cr, cg, cb, twinkle)
+    for (var step = 0; step < LIFE; step++)
+        cls(strip)
+        drawSky(strip, twinkle + step)
+
+        for (var i = 0; i < PARTS; i++)
+            if (plife[i] > 0) then
+                var r = fade(cr, plife[i])
+                var g = fade(cg, plife[i])
+                var b = fade(cb, plife[i])
+                pixel(strip, px[i], py[i], r, g, b)
+
+                // Pequeña chispa de arrastre un paso atrás
+                var tx = px[i] - DX[i]
+                var ty = py[i] - DY[i]
+                pixel(strip, tx, ty, fade(r, 3), fade(g, 3), fade(b, 3))
+
+                // Avanzar
+                px[i]    = px[i] + DX[i]
+                py[i]    = py[i] + DY[i]
+                plife[i] = plife[i] - 1
+            end
+        end
+
+        strip.show()
+        pause(105)
+    end
+end
+
+// ─── Doble explosión: segunda corona con color distinto ──────
+func doubleExplosion(strip, cx, cy, cr, cg, cb, twinkle)
+    // Segunda detonación con color rotado
+    var cr2 = cb
+    var cg2 = cr
+    var cb2 = cg
+
+    detonation(strip, cx, cy, cr2, cg2, cb2, twinkle)
+    spawnParticles(cx, cy)
+    animateParticles(strip, cr2, cg2, cb2, twinkle)
+end
+
+// ─── Setup ───────────────────────────────────────────────────
+var strip = LED.new(17, 64)
+strip.setBrightness(128)
+randomize(clock())
+
+var twinkle = 0
+
+// ─── Loop principal ──────────────────────────────────────────
+while (true)
+
+    // Elegir cohete aleatorio
+    var col      = random(0, 6)
+    var rocketX  = random(1, 6)
+    var explodeY = random(1, 3)
+    var cr = palR[col]
+    var cg = palG[col]
+    var cb = palB[col]
+
+    // Lanzar
+    launchRocket(strip, rocketX, explodeY, twinkle)
+
+    // Explosión principal
+    detonation(strip, rocketX, explodeY, cr, cg, cb, twinkle)
+    spawnParticles(rocketX, explodeY)
+    animateParticles(strip, cr, cg, cb, twinkle)
+
+    // ¿Doble explosión? ~40% de probabilidad
+    var bonus = random(0, 9)
+    if (bonus <= 3) then
+        doubleExplosion(strip, rocketX, explodeY, cr, cg, cb, twinkle)
+    end
+
+    // Cielo nocturno entre cohetes
+    cls(strip)
+    drawSky(strip, twinkle)
+    strip.show()
+    pause(random(150, 450))
+
+    twinkle = twinkle + 1
+    println("Use mem : ", memUse()," | Free mem : ", memFree())
+end
+
+

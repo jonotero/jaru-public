@@ -1,0 +1,614 @@
+digraph{
+    node [shape=box]
+    0 [label="0 Root\l--------"]
+    0 -> 2
+    2 [label="2 Use LED"]
+    2 -> 
+    0 [label="0 Root\l--------"]
+    0 -> 3
+    3 [label="3 Constant\l--------"]
+    3 -> 4
+    4 [label="4 Integer\l8"]
+    0 [label="0 Root\l--------"]
+    0 -> 5
+    5 [label="5 Constant\l--------"]
+    5 -> 6
+    6 [label="6 Integer\l8"]
+    0 [label="0 Root\l--------"]
+    0 -> 7
+    7 [label="7 Expression"]
+    7 -> 8
+    8 [label="8 Function Declare\l-----------------------\lxy"]
+    8 -> 11
+    11 [label="11 Block"]
+    11 -> 12
+    12 [label="12 Return"]
+    12 -> 16
+    16 [label="16 Infix Expr\l+"]
+    16 -> 14
+    14 [label="14 Infix Expr\l*"]
+    14 -> 13
+    13 [label="13 Identifier\ly"]
+    14 [label="14 Infix Expr\l*"]
+    14 -> 15
+    15 [label="15 Identifier\lWIDTH"]
+    16 [label="16 Infix Expr\l+"]
+    16 -> 17
+    17 [label="17 Identifier\lx"]
+    0 [label="0 Root\l--------"]
+    0 -> 18
+    18 [label="18 Expression"]
+    18 -> 19
+    19 [label="19 Function Declare\l-----------------------\lpixel"]
+    19 -> 26
+    26 [label="26 Block"]
+    26 -> 27
+    27 [label="27 If Then\l--------"]
+    27 -> 43
+    43 [label="43 Block"]
+    43 -> 44
+    44 [label="44 Return"]
+    44 ->     26 [label="26 Block"]
+    26 -> 45
+    45 [label="45 Expression"]
+    45 -> 47
+    47 [label="47 Infix Dot"]
+    47 -> 46
+    46 [label="46 Identifier\lstrip"]
+    47 -> 49
+    49 [label="49 Call\lsetPixel()"]
+    49 -> 51
+    51 [label="51 Call\lxy()"]
+    51 -> 52
+    52 [label="52 Identifier\lx"]
+    51 -> 53
+    53 [label="53 Identifier\ly"]
+    49 -> 54
+    54 [label="54 Identifier\lr"]
+    49 -> 55
+    55 [label="55 Identifier\lg"]
+    49 -> 56
+    56 [label="56 Identifier\lb"]
+    0 [label="0 Root\l--------"]
+    0 -> 57
+    57 [label="57 Expression"]
+    57 -> 58
+    58 [label="58 Function Declare\l-----------------------\lcls"]
+    58 -> 60
+    60 [label="60 Block"]
+    60 -> 61
+    61 [label="61 Expression"]
+    61 -> 63
+    63 [label="63 Infix Dot"]
+    63 -> 62
+    62 [label="62 Identifier\lstrip"]
+    63 -> 65
+    65 [label="65 Call\lclear()"]
+    0 [label="0 Root\l--------"]
+    0 -> 66
+    66 [label="66 Expression"]
+    66 -> 67
+    67 [label="67 Function Declare\l-----------------------\ldrawRing"]
+    67 -> 73
+    73 [label="73 Block"]
+    73 -> 74
+    74 [label="74 Var Declare\l-----------------\lx0"]
+    75 [label ="74 Var : x0"]
+    74 -> 75
+    75 [label="75 Identifier\llayer"]
+    73 [label="73 Block"]
+    73 -> 76
+    76 [label="76 Var Declare\l-----------------\ly0"]
+    77 [label ="76 Var : y0"]
+    76 -> 77
+    77 [label="77 Identifier\llayer"]
+    73 [label="73 Block"]
+    73 -> 78
+    78 [label="78 Var Declare\l-----------------\lx1"]
+    82 [label ="78 Var : x1"]
+    78 -> 82
+    82 [label="82 Infix Expr\l-"]
+    82 -> 80
+    80 [label="80 Infix Expr\l-"]
+    80 -> 79
+    79 [label="79 Identifier\lWIDTH"]
+    80 [label="80 Infix Expr\l-"]
+    80 -> 81
+    81 [label="81 Integer\l1"]
+    82 [label="82 Infix Expr\l-"]
+    82 -> 83
+    83 [label="83 Identifier\llayer"]
+    73 [label="73 Block"]
+    73 -> 84
+    84 [label="84 Var Declare\l-----------------\ly1"]
+    88 [label ="84 Var : y1"]
+    84 -> 88
+    88 [label="88 Infix Expr\l-"]
+    88 -> 86
+    86 [label="86 Infix Expr\l-"]
+    86 -> 85
+    85 [label="85 Identifier\lHEIGHT"]
+    86 [label="86 Infix Expr\l-"]
+    86 -> 87
+    87 [label="87 Integer\l1"]
+    88 [label="88 Infix Expr\l-"]
+    88 -> 89
+    89 [label="89 Identifier\llayer"]
+    73 [label="73 Block"]
+    73 -> 90
+    90 [label="90 For Loop\l------------"]
+    90 -> 91
+    91 [label="91 Var Declare\l-----------------\lx"]
+    92 [label ="91 Var : x"]
+    91 -> 92
+    92 [label="92 Identifier\lx0"]
+    90 -> 94
+    94 [label="94 Infix Expr\l<="]
+    94 -> 93
+    93 [label="93 Identifier\lx"]
+    94 [label="94 Infix Expr\l<="]
+    94 -> 95
+    95 [label="95 Identifier\lx1"]
+    90 -> 96
+    96 [label="96 Postfix Expr\l++"]
+    96 -> 97
+    97 [label="97 Identifier\lx"]
+    90 -> 98
+    98 [label="98 Block"]
+    98 -> 99
+    99 [label="99 Expression"]
+    99 -> 101
+    101 [label="101 Call\lpixel()"]
+    101 -> 102
+    102 [label="102 Identifier\lstrip"]
+    101 -> 103
+    103 [label="103 Identifier\lx"]
+    101 -> 104
+    104 [label="104 Identifier\ly0"]
+    101 -> 105
+    105 [label="105 Identifier\lr"]
+    101 -> 106
+    106 [label="106 Identifier\lg"]
+    101 -> 107
+    107 [label="107 Identifier\lb"]
+    98 [label="98 Block"]
+    98 -> 108
+    108 [label="108 Expression"]
+    108 -> 110
+    110 [label="110 Call\lpixel()"]
+    110 -> 111
+    111 [label="111 Identifier\lstrip"]
+    110 -> 112
+    112 [label="112 Identifier\lx"]
+    110 -> 113
+    113 [label="113 Identifier\ly1"]
+    110 -> 114
+    114 [label="114 Identifier\lr"]
+    110 -> 115
+    115 [label="115 Identifier\lg"]
+    110 -> 116
+    116 [label="116 Identifier\lb"]
+    73 [label="73 Block"]
+    73 -> 117
+    117 [label="117 For Loop\l------------"]
+    117 -> 118
+    118 [label="118 Var Declare\l-----------------\ly"]
+    119 [label ="118 Var : y"]
+    118 -> 119
+    119 [label="119 Identifier\ly0"]
+    117 -> 121
+    121 [label="121 Infix Expr\l<="]
+    121 -> 120
+    120 [label="120 Identifier\ly"]
+    121 [label="121 Infix Expr\l<="]
+    121 -> 122
+    122 [label="122 Identifier\ly1"]
+    117 -> 123
+    123 [label="123 Postfix Expr\l++"]
+    123 -> 124
+    124 [label="124 Identifier\ly"]
+    117 -> 125
+    125 [label="125 Block"]
+    125 -> 126
+    126 [label="126 Expression"]
+    126 -> 128
+    128 [label="128 Call\lpixel()"]
+    128 -> 129
+    129 [label="129 Identifier\lstrip"]
+    128 -> 130
+    130 [label="130 Identifier\lx0"]
+    128 -> 131
+    131 [label="131 Identifier\ly"]
+    128 -> 132
+    132 [label="132 Identifier\lr"]
+    128 -> 133
+    133 [label="133 Identifier\lg"]
+    128 -> 134
+    134 [label="134 Identifier\lb"]
+    125 [label="125 Block"]
+    125 -> 135
+    135 [label="135 Expression"]
+    135 -> 137
+    137 [label="137 Call\lpixel()"]
+    137 -> 138
+    138 [label="138 Identifier\lstrip"]
+    137 -> 139
+    139 [label="139 Identifier\lx1"]
+    137 -> 140
+    140 [label="140 Identifier\ly"]
+    137 -> 141
+    141 [label="141 Identifier\lr"]
+    137 -> 142
+    142 [label="142 Identifier\lg"]
+    137 -> 143
+    143 [label="143 Identifier\lb"]
+    0 [label="0 Root\l--------"]
+    0 -> 144
+    144 [label="144 Var Declare\l-----------------\lstrip"]
+    146 [label ="144 Var : strip"]
+    144 -> 146
+    146 [label="146 Infix Dot"]
+    146 -> 145
+    145 [label="145 Identifier\lLED"]
+    146 -> 148
+    148 [label="148 Call\lnew()"]
+    148 -> 149
+    149 [label="149 Integer\l17"]
+    148 -> 150
+    150 [label="150 Integer\l64"]
+    0 [label="0 Root\l--------"]
+    0 -> 151
+    151 [label="151 Expression"]
+    151 -> 153
+    153 [label="153 Infix Dot"]
+    153 -> 152
+    152 [label="152 Identifier\lstrip"]
+    153 -> 155
+    155 [label="155 Call\lsetBrightness()"]
+    155 -> 156
+    156 [label="156 Integer\l128"]
+    0 [label="0 Root\l--------"]
+    0 -> 157
+    157 [label="157 While"]
+    157 -> 159
+    159 [label="159 Block"]
+    159 -> 160
+    160 [label="160 Expression"]
+    160 -> 162
+    162 [label="162 Call\lcls()"]
+    162 -> 163
+    163 [label="163 Identifier\lstrip"]
+    159 [label="159 Block"]
+    159 -> 164
+    164 [label="164 Expression"]
+    164 -> 166
+    166 [label="166 Call\ldrawRing()"]
+    166 -> 167
+    167 [label="167 Identifier\lstrip"]
+    166 -> 168
+    168 [label="168 Integer\l0"]
+    166 -> 169
+    169 [label="169 Integer\l120"]
+    166 -> 170
+    170 [label="170 Integer\l0"]
+    166 -> 171
+    171 [label="171 Integer\l0"]
+    159 [label="159 Block"]
+    159 -> 172
+    172 [label="172 Expression"]
+    172 -> 174
+    174 [label="174 Infix Dot"]
+    174 -> 173
+    173 [label="173 Identifier\lstrip"]
+    174 -> 176
+    176 [label="176 Call\lshow()"]
+    159 [label="159 Block"]
+    159 -> 177
+    177 [label="177 Expression"]
+    177 -> 179
+    179 [label="179 Call\lpause()"]
+    179 -> 180
+    180 [label="180 Integer\l120"]
+    159 [label="159 Block"]
+    159 -> 181
+    181 [label="181 Expression"]
+    181 -> 183
+    183 [label="183 Call\ldrawRing()"]
+    183 -> 184
+    184 [label="184 Identifier\lstrip"]
+    183 -> 185
+    185 [label="185 Integer\l1"]
+    183 -> 186
+    186 [label="186 Integer\l120"]
+    183 -> 187
+    187 [label="187 Integer\l60"]
+    183 -> 188
+    188 [label="188 Integer\l0"]
+    159 [label="159 Block"]
+    159 -> 189
+    189 [label="189 Expression"]
+    189 -> 191
+    191 [label="191 Infix Dot"]
+    191 -> 190
+    190 [label="190 Identifier\lstrip"]
+    191 -> 193
+    193 [label="193 Call\lshow()"]
+    159 [label="159 Block"]
+    159 -> 194
+    194 [label="194 Expression"]
+    194 -> 196
+    196 [label="196 Call\lpause()"]
+    196 -> 197
+    197 [label="197 Integer\l120"]
+    159 [label="159 Block"]
+    159 -> 198
+    198 [label="198 Expression"]
+    198 -> 200
+    200 [label="200 Call\ldrawRing()"]
+    200 -> 201
+    201 [label="201 Identifier\lstrip"]
+    200 -> 202
+    202 [label="202 Integer\l2"]
+    200 -> 203
+    203 [label="203 Integer\l120"]
+    200 -> 204
+    204 [label="204 Integer\l120"]
+    200 -> 205
+    205 [label="205 Integer\l0"]
+    159 [label="159 Block"]
+    159 -> 206
+    206 [label="206 Expression"]
+    206 -> 208
+    208 [label="208 Infix Dot"]
+    208 -> 207
+    207 [label="207 Identifier\lstrip"]
+    208 -> 210
+    210 [label="210 Call\lshow()"]
+    159 [label="159 Block"]
+    159 -> 211
+    211 [label="211 Expression"]
+    211 -> 213
+    213 [label="213 Call\lpause()"]
+    213 -> 214
+    214 [label="214 Integer\l120"]
+    159 [label="159 Block"]
+    159 -> 215
+    215 [label="215 Expression"]
+    215 -> 217
+    217 [label="217 Call\ldrawRing()"]
+    217 -> 218
+    218 [label="218 Identifier\lstrip"]
+    217 -> 219
+    219 [label="219 Integer\l3"]
+    217 -> 220
+    220 [label="220 Integer\l120"]
+    217 -> 221
+    221 [label="221 Integer\l120"]
+    217 -> 222
+    222 [label="222 Integer\l120"]
+    159 [label="159 Block"]
+    159 -> 223
+    223 [label="223 Expression"]
+    223 -> 225
+    225 [label="225 Infix Dot"]
+    225 -> 224
+    224 [label="224 Identifier\lstrip"]
+    225 -> 227
+    227 [label="227 Call\lshow()"]
+    159 [label="159 Block"]
+    159 -> 228
+    228 [label="228 Expression"]
+    228 -> 230
+    230 [label="230 Call\lpause()"]
+    230 -> 231
+    231 [label="231 Integer\l220"]
+    159 [label="159 Block"]
+    159 -> 232
+    232 [label="232 Expression"]
+    232 -> 234
+    234 [label="234 Call\lcls()"]
+    234 -> 235
+    235 [label="235 Identifier\lstrip"]
+    159 [label="159 Block"]
+    159 -> 236
+    236 [label="236 Expression"]
+    236 -> 238
+    238 [label="238 Call\ldrawRing()"]
+    238 -> 239
+    239 [label="239 Identifier\lstrip"]
+    238 -> 240
+    240 [label="240 Integer\l0"]
+    238 -> 241
+    241 [label="241 Integer\l0"]
+    238 -> 242
+    242 [label="242 Integer\l0"]
+    238 -> 243
+    243 [label="243 Integer\l120"]
+    159 [label="159 Block"]
+    159 -> 244
+    244 [label="244 Expression"]
+    244 -> 246
+    246 [label="246 Infix Dot"]
+    246 -> 245
+    245 [label="245 Identifier\lstrip"]
+    246 -> 248
+    248 [label="248 Call\lshow()"]
+    159 [label="159 Block"]
+    159 -> 249
+    249 [label="249 Expression"]
+    249 -> 251
+    251 [label="251 Call\lpause()"]
+    251 -> 252
+    252 [label="252 Integer\l120"]
+    159 [label="159 Block"]
+    159 -> 253
+    253 [label="253 Expression"]
+    253 -> 255
+    255 [label="255 Call\ldrawRing()"]
+    255 -> 256
+    256 [label="256 Identifier\lstrip"]
+    255 -> 257
+    257 [label="257 Integer\l1"]
+    255 -> 258
+    258 [label="258 Integer\l0"]
+    255 -> 259
+    259 [label="259 Integer\l80"]
+    255 -> 260
+    260 [label="260 Integer\l120"]
+    159 [label="159 Block"]
+    159 -> 261
+    261 [label="261 Expression"]
+    261 -> 263
+    263 [label="263 Infix Dot"]
+    263 -> 262
+    262 [label="262 Identifier\lstrip"]
+    263 -> 265
+    265 [label="265 Call\lshow()"]
+    159 [label="159 Block"]
+    159 -> 266
+    266 [label="266 Expression"]
+    266 -> 268
+    268 [label="268 Call\lpause()"]
+    268 -> 269
+    269 [label="269 Integer\l120"]
+    159 [label="159 Block"]
+    159 -> 270
+    270 [label="270 Expression"]
+    270 -> 272
+    272 [label="272 Call\ldrawRing()"]
+    272 -> 273
+    273 [label="273 Identifier\lstrip"]
+    272 -> 274
+    274 [label="274 Integer\l2"]
+    272 -> 275
+    275 [label="275 Integer\l0"]
+    272 -> 276
+    276 [label="276 Integer\l120"]
+    272 -> 277
+    277 [label="277 Integer\l60"]
+    159 [label="159 Block"]
+    159 -> 278
+    278 [label="278 Expression"]
+    278 -> 280
+    280 [label="280 Infix Dot"]
+    280 -> 279
+    279 [label="279 Identifier\lstrip"]
+    280 -> 282
+    282 [label="282 Call\lshow()"]
+    159 [label="159 Block"]
+    159 -> 283
+    283 [label="283 Expression"]
+    283 -> 285
+    285 [label="285 Call\lpause()"]
+    285 -> 286
+    286 [label="286 Integer\l120"]
+    159 [label="159 Block"]
+    159 -> 287
+    287 [label="287 Expression"]
+    287 -> 289
+    289 [label="289 Call\ldrawRing()"]
+    289 -> 290
+    290 [label="290 Identifier\lstrip"]
+    289 -> 291
+    291 [label="291 Integer\l3"]
+    289 -> 292
+    292 [label="292 Integer\l120"]
+    289 -> 293
+    293 [label="293 Integer\l0"]
+    289 -> 294
+    294 [label="294 Integer\l120"]
+    159 [label="159 Block"]
+    159 -> 295
+    295 [label="295 Expression"]
+    295 -> 297
+    297 [label="297 Infix Dot"]
+    297 -> 296
+    296 [label="296 Identifier\lstrip"]
+    297 -> 299
+    299 [label="299 Call\lshow()"]
+    159 [label="159 Block"]
+    159 -> 300
+    300 [label="300 Expression"]
+    300 -> 302
+    302 [label="302 Call\lpause()"]
+    302 -> 303
+    303 [label="303 Integer\l220"]
+    159 [label="159 Block"]
+    159 -> 304
+    304 [label="304 For Loop\l------------"]
+    304 -> 305
+    305 [label="305 Var Declare\l-----------------\li"]
+    306 [label ="305 Var : i"]
+    305 -> 306
+    306 [label="306 Integer\l3"]
+    304 -> 308
+    308 [label="308 Infix Expr\l>="]
+    308 -> 307
+    307 [label="307 Identifier\li"]
+    308 [label="308 Infix Expr\l>="]
+    308 -> 309
+    309 [label="309 Integer\l0"]
+    304 -> 310
+    310 [label="310 Postfix Expr\l--"]
+    310 -> 311
+    311 [label="311 Identifier\li"]
+    304 -> 312
+    312 [label="312 Block"]
+    312 -> 313
+    313 [label="313 Expression"]
+    313 -> 315
+    315 [label="315 Call\lcls()"]
+    315 -> 316
+    316 [label="316 Identifier\lstrip"]
+    312 [label="312 Block"]
+    312 -> 317
+    317 [label="317 For Loop\l------------"]
+    317 -> 318
+    318 [label="318 Var Declare\l-----------------\lj"]
+    319 [label ="318 Var : j"]
+    318 -> 319
+    319 [label="319 Integer\l0"]
+    317 -> 321
+    321 [label="321 Infix Expr\l<="]
+    321 -> 320
+    320 [label="320 Identifier\lj"]
+    321 [label="321 Infix Expr\l<="]
+    321 -> 322
+    322 [label="322 Identifier\li"]
+    317 -> 323
+    323 [label="323 Postfix Expr\l++"]
+    323 -> 324
+    324 [label="324 Identifier\lj"]
+    317 -> 325
+    325 [label="325 Block"]
+    325 -> 326
+    326 [label="326 Expression"]
+    326 -> 328
+    328 [label="328 Call\ldrawRing()"]
+    328 -> 329
+    329 [label="329 Identifier\lstrip"]
+    328 -> 330
+    330 [label="330 Identifier\lj"]
+    328 -> 331
+    331 [label="331 Integer\l30"]
+    328 -> 332
+    332 [label="332 Integer\l30"]
+    328 -> 333
+    333 [label="333 Integer\l30"]
+    312 [label="312 Block"]
+    312 -> 334
+    334 [label="334 Expression"]
+    334 -> 336
+    336 [label="336 Infix Dot"]
+    336 -> 335
+    335 [label="335 Identifier\lstrip"]
+    336 -> 338
+    338 [label="338 Call\lshow()"]
+    312 [label="312 Block"]
+    312 -> 339
+    339 [label="339 Expression"]
+    339 -> 341
+    341 [label="341 Call\lpause()"]
+    341 -> 342
+    342 [label="342 Integer\l90"]
+}

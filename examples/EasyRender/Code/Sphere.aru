@@ -1,0 +1,104 @@
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Sphere_Optimized.aru
+// Version 2.0 - OPTIMIZADO
+// ---------------------------------------------------------------------------------------------
+// OPTIMIZACIONES:
+// 1. Early rejection con bounding sphere
+// 2. Cálculo de discriminante optimizado
+// 3. Menos operaciones de división
+// 4. Cache de valores precalculados
+//
+// Easy Render (c) Jon Otero Fernandez 1996.
+// Jon Otero Fernandez (c) Noviembre 2022
+// Optimizado 2024
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+import "Globals"
+import "Vector"
+import "Ray"
+import "Material"
+
+class Sphere
+    def init()
+        this.pos = Vector();
+        this.mat = Material();
+        this.radio = 0.0;
+        this.radioCuadrado = 0.0;
+    end;
+
+    def init(p, rad)
+        this.pos = p.copy();
+        this.mat = Material();
+        this.radio = rad;
+        this.radioCuadrado = rad * rad;
+    end;
+
+    // ******************************************************
+    // Intersección OPTIMIZADA
+    // Evita operaciones innecesarias con early-exit
+    // ******************************************************
+    def Interseccion(rayo)
+        // Calcular vector desde origen del rayo al centro de la esfera
+        // Inline para evitar crear Vector temporal
+        var ocX = rayo.pos.x - this.pos.x
+        var ocY = rayo.pos.y - this.pos.y
+        var ocZ = rayo.pos.z - this.pos.z
+
+        // Dirección del rayo (ya normalizada)
+        var dirX = rayo.x
+        var dirY = rayo.y
+        var dirZ = rayo.z
+
+        // b = 2 * dot(oc, dir)
+        // Como dir está normalizado, a = dot(dir,dir) = 1, así que simplificamos
+        var b = ocX * dirX + ocY * dirY + ocZ * dirZ
+
+        // c = dot(oc,oc) - radio²
+        var c = ocX * ocX + ocY * ocY + ocZ * ocZ - this.radioCuadrado
+
+        // Early exit: si c > 0 (origen fuera de esfera) y b > 0 (rayo apunta lejos)
+        // entonces no puede haber intersección
+        if (c > 0 and b > 0) then
+            return -1
+        end;
+
+        // Discriminante: b² - c (simplificado porque a=1)
+        var discriminante = b * b - c
+
+        if (discriminante < 0) then
+            return -1
+        end;
+
+        var sqrtD = sqrt(discriminante)
+
+        // Solución más cercana: -b - sqrt(d)
+        var t = -b - sqrtD
+
+        if (t > EPSILON) then
+            return t
+        end;
+
+        // Si t < 0, probar la otra solución: -b + sqrt(d)
+        t = -b + sqrtD
+
+        if (t > EPSILON) then
+            return t
+        end;
+
+        return -1
+    end;
+
+    // **********************************************************
+    // Normal OPTIMIZADA - evita crear Vector intermedio
+    // **********************************************************
+    def Normal(v)
+        var invRadio = 1.0 / this.radio
+        return Vector(
+            (v.x - this.pos.x) * invRadio,
+            (v.y - this.pos.y) * invRadio,
+            (v.z - this.pos.z) * invRadio
+        )
+    end;
+
+end;
+
