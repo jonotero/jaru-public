@@ -1,0 +1,213 @@
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Vector.aru
+// Version 1.2
+// ---------------------------------------------------------------------------------------------
+// Conversion of the C++ code from the Easy Render ray tracing engine.
+//
+// Easy Render (c) Jon Otero Fernandez 1996.
+// Jon Otero Fernandez (c) November 2022
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+import "Globals"
+
+// =========================================================
+// Construction of a vector from its coordinates
+// =========================================================
+class Vector
+    // ---------------------------------------
+    // Default vector constructor.
+    // ---------------------------------------
+    def init();
+        this.x=0.0;
+        this.y=0.0;
+        this.z=0.0;
+    end
+
+    // -------------------------------------------------------------
+    // Constructor that copies another vector.
+    // -------------------------------------------------------------
+    def init(v1)
+        this.x=v1.x;
+        this.y=v1.y;
+        this.z=v1.z;
+    end;
+
+    // -------------------------------------------------------------
+    // Constructor from explicit coordinates.
+    // -------------------------------------------------------------
+    def init(x,y,z);
+        this.x=x
+        this.y=y;
+        this.z=z;
+    end
+
+    // -------------------------------------------------------------
+    // Addition operator overload: vector+vector and vector+scalar
+    // -------------------------------------------------------------
+    operator + (v1,v2)
+        var result=Vector(0,0,0);
+        if (type(v2)==tInteger or type(v2)==tFloat ) then
+            result.x=v1.x+v2;
+            result.y=v1.y+v2;
+            result.z=v1.z+v2;
+        else
+            result.x=v1.x+v2.x;
+            result.y=v1.y+v2.y;
+            result.z=v1.z+v2.z;
+        end;
+        return(result);
+    end;
+
+    // -------------------------------------------------------------
+    // Negate a vector.
+    // -------------------------------------------------------------
+    operator - (v1)
+        var result=Vector(0,0,0);
+        result.x=-v1.x;
+        result.y=-v1.y;
+        result.z=-v1.z;
+        return(result);
+    end;
+
+    // -------------------------------------------------------------
+    // Subtraction operator: vector-vector and vector-scalar
+    // -------------------------------------------------------------
+    operator - (v1,v2)
+        var result=Vector(0,0,0);
+        if (type(v2)==tInteger or type(v2)==tFloat ) then
+            result.x=v1.x-v2;
+            result.y=v1.y-v2;
+            result.z=v1.z-v2;
+        else
+            result.x=v1.x-v2.x;
+            result.y=v1.y-v2.y;
+            result.z=v1.z-v2.z;
+        end;
+        return(result);
+    end;
+
+    // -------------------------------------------------------------
+    // Multiplication: vector*vector and vector*scalar
+    // -------------------------------------------------------------
+    operator * (v1,v2)
+        var result=Vector(0,0,0);
+        if (type(v2)==tInteger or type(v2)==tFloat ) then
+            result.x=v1.x*v2;
+            result.y=v1.y*v2;
+            result.z=v1.z*v2;
+        else
+            result.x=v1.x*v2.x;
+            result.y=v1.y*v2.y;
+            result.z=v1.z*v2.z;
+        end;
+        return(result)
+    end;
+
+    // -------------------------------------------------------------
+    // Division of a vector by a scalar
+    // -------------------------------------------------------------
+    operator / (v1,n)
+        var result=Vector(0,0,0);
+        result.x=v1.x/n;
+        result.y=v1.y/n;
+        result.z=v1.z/n;
+        return(result);
+    end;
+
+    // -------------------------------------------------------------
+    // Dot product
+    // -------------------------------------------------------------
+    operator | (v1,v2)
+        return(v1.x*v2.x + v1.y*v2.y + v1.z*v2.z);
+    end;
+
+    // -------------------------------------------------------------
+    // Cross product
+    // -------------------------------------------------------------
+    operator & (v1,v2)
+        var result=Vector(0,0,0);
+        result.x=v1.y*v2.z - v1.z*v2.y;
+        result.y=v1.z*v2.x - v1.x*v2.z;
+        result.z=v1.x*v2.y - v1.y*v2.x;
+        return(result);
+    end;
+
+    // -----------------------------------------------------------------
+    // Normalize vector
+    // -----------------------------------------------------------------
+    operator ! (v1)
+        var result=v1.copy();
+        var magnitude=0.0;
+
+        // The magnitude of a vector is the square root of its dot product with itself
+        magnitude = sqrt(v1 | v1)
+        if (magnitude>1+EPSILON or (magnitude<1-EPSILON and magnitude>EPSILON))then
+            result.x=v1.x/magnitude;
+            result.y=v1.y/magnitude;
+            result.z=v1.z/magnitude;
+        end;
+        return(result);
+    end;
+
+    // ----------------------------------------------------
+    // Checks if any component of the vector is greater
+    // than a scalar
+    // ----------------------------------------------------
+    operator > (v1,n)
+        return (v1.x>n or v1.y>n or v1.z>n)
+    end;
+
+    // ------------------------------------------------------------------
+    // Clamps each component so it does not exceed the given value
+    // ------------------------------------------------------------------
+    def AtMost(n)
+        if (this.x > n) then
+            this.x=n
+        end;
+        if (this.y > n) then
+            this.y=n
+        end;
+        if (this.z > n) then
+            this.z=n
+        end;
+    end;
+
+    // ------------------------------------------------------------------
+    // Clamps each component so it is not less than the given value
+    // ------------------------------------------------------------------
+    def AtLeast(n)
+        if (this.x < n) then
+            this.x=n
+        end;
+        if (this.y < n) then
+            this.y=n
+        end;
+        if (this.z < n) then
+            this.z=n
+        end;
+    end;
+
+    // -------------------------------------------------------------------------
+    // Returns the component with the greatest absolute value (dominant axis).
+    // -------------------------------------------------------------------------
+    def Dominant()
+        var auxX=abs(this.x), auxY=abs(this.y), auxZ=abs(this.z);
+        var dominant;
+        if ((auxX> auxY) and (auxX>auxZ)) then
+            dominant=0;
+        elsif (auxY>auxZ) then
+            dominant=1;
+        else
+            dominant=2;
+        end
+        return(dominant);
+    end
+
+    // ---------------------------------------------------------------------
+    // Returns true if any component of the vector is positive.
+    // ---------------------------------------------------------------------
+    def AnyPositive()
+        return ((this.x>EPSILON) or (this.y>EPSILON) or (this.z>EPSILON))
+    end;
+
+end
