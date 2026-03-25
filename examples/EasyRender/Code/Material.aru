@@ -1,0 +1,30 @@
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Material.aru
+// Version 1.2
+// ---------------------------------------------------------------------------------------------
+// Conversion of the C++ code from the Easy Render ray tracing engine.
+//
+// Easy Render (c) Jon Otero Fernandez 1996.
+// Jon Otero Fernandez (c) November 2022
+/////////////////////////////////////////////////////////////////////////////////////////////////
+import "Globals"
+import "Vector.aru"
+
+class Material
+    def init()
+        this.diffuse=Vector();
+        this.kr=0;  // Reflection coefficient
+        this.ks=0;  // Specular coefficient
+        this.ps=0;  // Specular power (shininess)
+        this.kt=0;  // Transparency coefficient
+    end;
+
+    def init(diffuse, kReflect, kSpecular, pSpecular, kTrans)
+        this.diffuse=diffuse.copy();
+        this.kr=kReflect;    // Reflection coefficient
+        this.ks=kSpecular;   // Specular coefficient
+        this.ps=pSpecular;   // Specular power (shininess)
+        this.kt=kTrans;      // Transparency coefficient
+    end;
+
+end;

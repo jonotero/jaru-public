@@ -1,0 +1,102 @@
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Globals.aru
+// Version 2.0 - OPTIMIZED FOR SPEED
+// ---------------------------------------------------------------------------------------------
+// Adjustable parameters for speed/quality balance
+//
+// Jon Otero Fernandez (c) 2022-2025
+// Optimized 2024
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+// =============================================================================
+// Program constants
+// =============================================================================
+const INFINITY = 1e38
+const EPSILON = 1e-3
+const MAX_FOCAL = 90
+const MIN_FOCAL = 5
+const MAX_ANTIALIASING = 16
+const GRAD2RAD = PI / 180
+const RAD2DEG = 180 / PI
+
+// =============================================================================
+// Global variables - Screen resolution
+// =============================================================================
+var SCREEN_MAX_X = 320
+var SCREEN_MAX_Y = 200
+
+// =============================================================================
+// SPEED PARAMETERS - ADJUST AS NEEDED
+// =============================================================================
+
+// Maximum recursion depth for reflections/refractions
+// FAST: 3-4 | QUALITY: 6-8
+var MAX_REFLECTIONS = 4
+
+// Minimum contribution threshold to keep tracing rays
+// FAST: 0.01 | QUALITY: 0.001
+var MIN_REFLECT = 0.005
+
+// =============================================================================
+// REFRACTION INDICES
+// =============================================================================
+var NU = [1.0, 1.02]   // [Air, Glass] - 1.02 = almost no distortion
+// Alternatives:
+// var NU = [1.0, 1.5]   // Common glass
+// var NU = [1.0, 1.33]  // Water
+// var NU = [1.0, 2.42]  // Diamond
+
+// =============================================================================
+// OPTIMIZED helper functions
+// =============================================================================
+
+// Faster inline version
+func NONZERO(x)
+    return (x > EPSILON or x < -EPSILON)
+end;
+
+func InRange(n, x, y)
+    if (x > y) then
+        return (n <= x and n >= y)
+    elsif (x < y) then
+        return (n >= x and n <= y)
+    else
+        return (n == x)
+    end;
+end;
+
+// =============================================================================
+// UTILITY FUNCTIONS FOR OPTIMIZATION
+// =============================================================================
+
+// Square without calling pow
+func Sqr(x)
+    return x * x
+end;
+
+// Inline absolute value
+func Abs(x)
+    if (x < 0) then
+        return -x
+    end;
+    return x
+end;
+
+// Fast clamp to [0,1]
+func Clamp01(x)
+    if (x < 0) then return 0 end;
+    if (x > 1) then return 1 end;
+    return x
+end;
+
+// Clamp to range
+func ClampRange(x, minVal, maxVal)
+    if (x < minVal) then return minVal end;
+    if (x > maxVal) then return maxVal end;
+    return x
+end;
+
+// Linear mix/lerp
+func Mix(a, b, t)
+    return a + (b - a) * t
+end;
