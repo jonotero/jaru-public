@@ -1,0 +1,1 @@
+{ "version" : 1, "imageNodeID" : 9, "imageRelativePath" : "Images\\AA_Pacman03.bmp", "animation" : { "fps" : 15, "alignment" : 0, "isTransparent" : false, "backgroundColor" : 0, "gridWidth" : 16, "gridHeight" : 16 }, "regions" : [{ "x" : 64, "y" : 80, "width" : 16, "height" : 16 }, { "x" : 80, "y" : 80, "width" : 16, "height" : 16 }] }

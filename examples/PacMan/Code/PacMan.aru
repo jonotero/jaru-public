@@ -1,0 +1,1402 @@
+// PacMan with GridMap
+// Created: 2025-07-07
+// Author : Jon Otero
+// Version : 2.3.0 -
+
+use Display, Sprite, Input, Timer, GridMap
+
+var draw = Display.draw;
+
+import "Pacman_Map.aru"
+
+// ============================================================
+// Main game GridMap - replaces the two-dimensional array
+// ============================================================
+var gridMap = GridMap.new(MAP_COLUMNAS, MAP_FILAS)
+
+// ============================================================
+// Global variables for distance maps
+// ============================================================
+var distMapPacman = nil // Distance map toward Pacman
+var distMapHome = nil // Distance map toward the ghost house (for eyes)
+var scatterMaps = [] // Scatter maps for each ghost
+var lastPacmanCellX = -1
+var lastPacmanCellY = -1
+
+// Passable cells for ghosts (includes house=4)
+const GHOST_PASSABLE = [1, 2, 3, 4, 5]
+
+// Temporary values used to mark target cells in the GridMap
+const TEMP_MARKER_PACMAN = 99
+const TEMP_MARKER_HOME = 98
+const TEMP_MARKER_SCATTER = 97
+
+// ============================================================
+// Dumps the initial array map into the GridMap
+// ============================================================
+func MapToGrid()
+    for (var row = 0;row < MAP_FILAS;row++)
+        for (var col = 0;col < MAP_COLUMNAS;col++)
+            gridMap.set(col, row, mapa[row][col])
+        end
+    end
+    totalDots = gridMap.count(2) + gridMap.count(3)
+    println("Total dots: ", totalDots)
+end
+
+enum DIRECTION
+    UP, DOWN, LEFT, RIGHT
+end;
+
+enum GHOST
+    blinky, pinky, inky, clyde
+end
+
+enum STATE
+    chase, scatter, frighten, dead, housed
+end
+
+enum GAME_STATE
+    start, playing, lifelost, levelcomplete, gameover
+end
+
+var StatusGame = GAME_STATE.start
+
+const FPS = 25
+
+// 224x288
+const WIDTH = 320
+const HEIGHT = 240
+const VIEW_W = 224
+const VIEW_H = 288
+
+const TUNNEL_ROW = 14
+const PACMAN_START_CELL_X = 14;
+const PACMAN_START_CELL_Y = 23;
+
+var PlayerScore = 0;
+var PlayerLives = 3;
+var currentLevel = 1;
+var BonusActive = 0
+var dotsEatenCounter = 0;
+var dotsEatenThisLife = 0;
+var hudNeedsClearing = true
+
+var ghostReleaseTimer = 0;
+
+var SPEED_PACMAN
+var SPEED_GHOST
+var FRAMEPAUSE
+
+// =================================================================
+// FRUIT SYSTEM - GLOBAL VARIABLES
+// =================================================================
+
+var fruitActive = false
+var fruitAppearCount = 0
+var fruitTimerId = -1
+
+const FRUIT_DURATION_MS = 9000
+const FRUIT_APPEAR_DOTS_1 = 70
+const FRUIT_APPEAR_DOTS_2 = 170
+const FRUIT_CELL_X = 13
+const FRUIT_CELL_Y = 17
+
+// =================================================================
+// Ghost Mode Variables
+// =================================================================
+
+var levelModePattern = [
+    [STATE.scatter, 7 * FPS],
+    [STATE.chase, 20 * FPS],
+    [STATE.scatter, 7 * FPS],
+    [STATE.chase, 20 * FPS],
+    [STATE.scatter, 5 * FPS],
+    [STATE.chase, 20 * FPS],
+    [STATE.scatter, 5 * FPS],
+    [STATE.chase, 9999 * FPS]
+];
+
+// =================================================================
+// FRUIT PROGRESSION STRUCTURE
+// =================================================================
+var fruitProgression = [
+    {"level" : 1, "fruitIndex" : 0, "points" : 100},
+    {"level" : 2, "fruitIndex" : 1, "points" : 300},
+    {"level" : 3, "fruitIndex" : 2, "points" : 500},
+    {"level" : 5, "fruitIndex" : 3, "points" : 700},
+    {"level" : 7, "fruitIndex" : 4, "points" : 1000},
+    {"level" : 9, "fruitIndex" : 5, "points" : 2000},
+    {"level" : 11, "fruitIndex" : 6, "points" : 3000},
+    {"level" : 13, "fruitIndex" : 7, "points" : 5000}
+]
+
+var currentModeIndex = 0;
+var modeTimer = 0;
+var GLOBAL_GHOST_STATE = levelModePattern[0][0];
+
+const FRIGHT_DURATION = 6 * FPS;
+const FRIGHT_BLINK_WINDOW_MS = 2000
+var frightBlinkTimerId = -1
+var isFrightBlinkActive = false
+
+var frightTimerId = -1;
+
+var imgPacBonus = Sprite.load("Sprites/PacBonus.spr")
+
+var pacmanHud = Sprite.load("Sprites/PacManHud.spr")
+
+pacmanHud.pivot = [0, 0]
+
+var BitmapPoint = Bitmap.load("Images/punto.bmp")
+
+imgPacBonus.frameRate = 0
+imgPacBonus.pivot = [8, 8]
+
+func InitSystem()
+    if (platform() == HW_ESP32) then
+        SPEED_PACMAN = 4
+        SPEED_GHOST = 3
+        FRAMEPAUSE = 0
+    elsif (platform() == HW_WIN32) then
+        SPEED_GHOST = 1.5
+        SPEED_PACMAN = 2
+        FRAMEPAUSE = 33
+    end
+end
+
+// ================================================
+// Initialize the screen
+// ================================================
+func InitScreen()
+    Display.viewWidth = VIEW_W;
+    Display.viewHeight = VIEW_H;
+    Display.orientation(0);
+    Display.open(WIDTH, HEIGHT);
+
+    Display.autoClear = false
+    Display.showBG = true
+    Display.loadBG("Images/A_PacMap.bmp")
+
+    Display.posBG = [X_MAPINI, Y_MAPINI]
+
+    Display.mode(2)
+    Display.update();
+    if (platform() == HW_ESP32) then
+        Input.map(0, 38)
+        Input.map(2, 39)
+    else
+        Input.map(0, "UP")
+        Input.map(1, "DOWN")
+        Input.map(2, "LEFT")
+        Input.map(3, "RIGHT")
+    end
+end
+
+// ============================================================
+// HELPER FUNCTIONS USING GRIDMAP
+// ============================================================
+
+func GetCell(column, row)
+    if (row < 0 or row >= MAP_FILAS or column < 0 or column >= MAP_COLUMNAS) then
+        return 0
+    end
+    return gridMap.get(column, row)
+end
+
+func SetCell(column, row, value)
+    if (row >= 0 and row < MAP_FILAS and column >= 0 and column < MAP_COLUMNAS) then
+        gridMap.set(column, row, value)
+    end
+end
+
+func IsCellPassable(column, row)
+    if (row < 0 or row >= MAP_FILAS or column < 0 or column >= MAP_COLUMNAS) then
+        return false
+    end
+    return gridMap.get(column, row) != 0
+end
+
+func IsCellPassablePacman(column, row)
+    if (row < 0 or row >= MAP_FILAS or column < 0 or column >= MAP_COLUMNAS) then
+        return false
+    end
+    var cell = gridMap.get(column, row)
+    return (cell == 1 or cell == 2 or cell == 3 or cell == 5)
+end
+
+func NextCellInDir(direction, column, row)
+    switch (direction)
+        case DIRECTION.UP : row -= 1
+        case DIRECTION.DOWN : row += 1
+        case DIRECTION.LEFT : column -= 1
+        case DIRECTION.RIGHT : column += 1
+    end
+    return [column, row]
+end
+
+func GetOppositeDirection(currentDir)
+    switch (currentDir)
+        case DIRECTION.UP : return DIRECTION.DOWN
+        case DIRECTION.DOWN : return DIRECTION.UP
+        case DIRECTION.LEFT : return DIRECTION.RIGHT
+        case DIRECTION.RIGHT : return DIRECTION.LEFT
+    end
+end
+
+// ============================================================
+// Converts a GridMap direction value to game DIRECTION enum
+// ============================================================
+// GridMap.getDirection returns:
+// 0 = no movement, 1 = up, 2 = down, 3 = left, 4 = right
+// DIRECTION enum:
+// UP = 0, DOWN = 1, LEFT = 2, RIGHT = 3
+func GridDirToGameDir(gridDir)
+    switch (gridDir)
+        case 1 : return DIRECTION.UP
+        case 2 : return DIRECTION.DOWN
+        case 3 : return DIRECTION.LEFT
+        case 4 : return DIRECTION.RIGHT
+    end
+    return -1 // No valid movement
+end
+
+// ============================================================
+// Updates the distance maps every frame
+// ============================================================
+func UpdateDistanceMaps()
+    var pacmanCell = CoordToCell(PACMAN.x, PACMAN.y)
+    var px = pacmanCell[0]
+    var py = pacmanCell[1]
+
+    // Only recalculate when Pacman changes cell
+    if (px == lastPacmanCellX and py == lastPacmanCellY) then
+        return
+    end
+    lastPacmanCellX = px
+    lastPacmanCellY = py
+
+    var pacmanOriginalValue = gridMap.get(px, py)
+    gridMap.set(px, py, TEMP_MARKER_PACMAN)
+    distMapPacman = gridMap.dMap(TEMP_MARKER_PACMAN, GHOST_PASSABLE)
+    gridMap.set(px, py, pacmanOriginalValue)
+end
+
+// ============================================================
+// Initializes the scatter maps (once per level)
+// ============================================================
+func InitScatterMaps()
+    // Target corners for each ghost in scatter mode
+    // Index matches GHOST enum: blinky=0, pinky=1, inky=2, clyde=3
+    var corners = [
+        [26, 1], // Blinky - top-right corner (was [25, 0])
+        [1, 1], // Pinky  - top-left  corner (was [2,  0])
+        [26, 29], // Inky   - bottom-right corner (was [27, 30])
+        [1, 29] // Clyde  - bottom-left  corner (was [0,  30])
+    ]
+
+    scatterMaps = []
+
+    for (var i = 0;i < 4;i++)
+        var ex = corners[i][0]
+        var ey = corners[i][1]
+
+        // Save original value
+        var originalValue = gridMap.get(ex, ey)
+
+        // Mark corner as target
+        gridMap.set(ex, ey, TEMP_MARKER_SCATTER)
+
+        // Build and store the distance map
+        var scatterMap = gridMap.dMap(TEMP_MARKER_SCATTER, GHOST_PASSABLE)
+        scatterMaps.append(scatterMap)
+
+        // Restore original value
+        gridMap.set(ex, ey, originalValue)
+    end
+    var homeOriginalValue = gridMap.get(13, 14)
+    gridMap.set(13, 14, TEMP_MARKER_HOME)
+    distMapHome = gridMap.dMap(TEMP_MARKER_HOME, GHOST_PASSABLE)
+    gridMap.set(13, 14, homeOriginalValue)
+
+    println("Scatter maps initialized for level ", currentLevel)
+end
+
+func GetValidDirections(currentCol, currentRow, direction)
+    var validDirections = []
+
+    // Validate that coordinates are within the map
+    if (currentCol < 0 or currentCol >= MAP_COLUMNAS or
+    currentRow < 0 or currentRow >= MAP_FILAS) then
+        return validDirections // Return empty list if out of bounds
+    end
+
+    var oppositeDir = GetOppositeDirection(direction)
+
+    // gridMap.around returns [up, down, left, right]
+    var neighbors = gridMap.around(currentCol, currentRow)
+
+    // Make sure neighbors is valid
+    if (neighbors == nil or neighbors.size() < 4) then
+        return validDirections
+    end
+
+    var directions = [DIRECTION.UP, DIRECTION.DOWN, DIRECTION.LEFT, DIRECTION.RIGHT]
+
+    for (var i = 0;i < 4;i++)
+        if (neighbors[i] != 0 and directions[i] != oppositeDir) then
+            // Special check: do not enter the house from above
+            if (directions[i] == DIRECTION.DOWN) then
+                var cellBelow = GetCell(currentCol, currentRow + 1)
+                var currentCell = GetCell(currentCol, currentRow)
+                if (cellBelow == 4 and currentCell != 4) then
+                    continue // Prevent entering the house
+                end
+            end
+            validDirections.append(directions[i])
+        end
+    end
+
+    return validDirections
+end
+
+func CalculateDistance(col1, row1, col2, row2)
+    return abs(col1 - col2) + abs(row1 - row2)
+end
+
+func CellToCoords(column, row)
+    var x = X_MAPINI + column * CELL_SIZE + CELL_SIZE div 2
+    var y = Y_MAPINI + row * CELL_SIZE + CELL_SIZE div 2
+    return [x, y]
+end
+
+func CoordToCell(x, y)
+    var column = (x - X_MAPINI) div CELL_SIZE
+    var row = (y - Y_MAPINI) div CELL_SIZE
+    return [column, row]
+end
+
+func IsAtCenter(x, y)
+    var cell = CoordToCell(x, y)
+    var center = CellToCoords(cell[0], cell[1])
+    return (x == center[0] and y == center[1])
+end
+
+func LoadSpritePacman(path, animSpeed)
+    var spr = Sprite.load(path)
+    spr.yoyo = true
+    spr.pivot = [8, 8]
+    spr.frameRate = animSpeed
+    return spr
+end
+
+func LoadSpriteGhost(path, animSpeed)
+    var spr = Sprite.load(path)
+    spr.pivot = [8, 8]
+    spr.frameRate = animSpeed
+    return spr
+end
+
+// ============================================================
+// PACMAN CLASS
+// ============================================================
+class ObjPacMan
+
+    def init()
+        this.resetState()
+
+        var animSpeed = 70
+        this.sprRight = LoadSpritePacman("Sprites/PacMan/PacManR.spr", animSpeed)
+        this.sprUp = LoadSpritePacman("Sprites/PacMan/PacManU.spr", animSpeed)
+
+        this.sprDeath = Sprite.load("Sprites/PacMan/PacManDeath.spr")
+        this.sprDeath.loop = false
+        this.sprDeath.pivot = [8, 8]
+        this.sprDeath.frameRate = 100
+    end
+
+    def chooseDirection()
+        var currentCell = CoordToCell(this.x, this.y)
+        var px = currentCell[0]
+        var py = currentCell[1]
+
+        const PACMAN_PASSABLE = [1, 2, 3, 5]
+        const DANGER_DISTANCE = 3
+
+        // Evaluate every possible direction
+        var directions = [DIRECTION.UP, DIRECTION.DOWN, DIRECTION.LEFT, DIRECTION.RIGHT]
+        var validOptions = []
+
+        foreach (var dir in directions)
+            var next = NextCellInDir(dir, px, py)
+            var isTunnelExit = (py == TUNNEL_ROW and
+            (dir == DIRECTION.LEFT or dir == DIRECTION.RIGHT) and
+            (px <= 2 or px >= 25))
+            if (IsCellPassablePacman(next[0], next[1]) or isTunnelExit) then
+                var ghostDist = this.distanceToDangerousGhost(next[0], next[1])
+                validOptions.append([dir, next[0], next[1], ghostDist])
+            end
+        end
+
+        if (validOptions.size() == 0) then return end
+
+        // Separate safe directions (ghost is far)
+        var safeDirections = []
+        foreach (var option in validOptions)
+            if (option[3] > DANGER_DISTANCE) then
+                safeDirections.append(option)
+            end
+        end
+
+        // If there are safe directions, pick the one heading toward the nearest dot
+        if (safeDirections.size() > 0) then
+            var path = gridMap.nearest([2, 3], px, py, PACMAN_PASSABLE)
+            if (path != nil) then
+                if (path.size() >= 4) then
+                    var desiredDir = this.calculateDirection(px, py, path[2], path[3])
+                    foreach (var option in safeDirections)
+                        if (option[0] == desiredDir) then
+                            this.nextDirection = desiredDir
+                            return
+                        end
+                    end
+                end
+            end
+            // No dots or the ideal direction is not safe - use any safe one
+            this.nextDirection = safeDirections[0][0]
+        else
+            // No safe directions - choose the least dangerous one
+            var bestOption = validOptions[0]
+            foreach (var option in validOptions)
+                if (option[3] > bestOption[3]) then
+                    bestOption = option
+                end
+            end
+            this.nextDirection = bestOption[0]
+        end
+    end
+
+    def distanceToDangerousGhost(cx, cy)
+        var minDist = 999
+        foreach (var ghost in ghosts)
+            // Ignore non-dangerous ghosts
+            if (ghost.state == STATE.frighten) then continue end
+            if (ghost.state == STATE.housed) then continue end
+            if (ghost.state == STATE.dead) then continue end
+
+            var ghostCell = CoordToCell(ghost.x, ghost.y)
+            var dist = CalculateDistance(cx, cy, ghostCell[0], ghostCell[1])
+            if (dist < minDist) then
+                minDist = dist
+            end
+        end
+        return minDist
+    end
+
+    def calculateDirection(fromX, fromY, toX, toY)
+        if (toY < fromY) then return DIRECTION.UP end
+        if (toY > fromY) then return DIRECTION.DOWN end
+        if (toX < fromX) then return DIRECTION.LEFT end
+        if (toX > fromX) then return DIRECTION.RIGHT end
+        return this.direction
+    end
+
+    def update()
+        if (this.status == STATE.dead) then return end
+        if (CheckCollisions()) then this.status = STATE.dead;return end
+
+        var currentCell = CoordToCell(this.x, this.y)
+
+        if (IsAtCenter(this.x, this.y)) then
+            var cell = GetCell(currentCell[0], currentCell[1])
+
+            if (cell == 2) then
+                PlayerScore += 10;
+                SetCell(currentCell[0], currentCell[1], 1)
+                dotsEatenCounter++;
+                dotsEatenThisLife++;
+            elsif (cell == 3) then
+                PlayerScore += 50;
+                SetCell(currentCell[0], currentCell[1], 1)
+                dotsEatenCounter++;
+                dotsEatenThisLife++;
+
+                if (frightTimerId != -1) then
+                    Timer.clear(frightTimerId);
+                    frightTimerId = -1;
+                end
+                frightTimerId = Timer.after(FRIGHT_DURATION * 40, "onEndFright");
+                println(">>> FRIGHT TIMER created, ID: ", frightTimerId, " delay: ", FRIGHT_DURATION * 40)
+                if (frightBlinkTimerId != -1) then
+                    Timer.clear(frightBlinkTimerId)
+                    frightBlinkTimerId = -1
+                end
+                isFrightBlinkActive = false
+                var blinkDelay = FRIGHT_DURATION * 40 - FRIGHT_BLINK_WINDOW_MS
+                if (blinkDelay < 0) then blinkDelay = 0 end
+                frightBlinkTimerId = Timer.after(blinkDelay, "onStartFrightBlink")
+
+                foreach (var ghost in ghosts)
+                    if (ghost.state != STATE.housed) then
+                        ghost.state = STATE.frighten;
+                        ghost.reverseDirection();
+                    end
+                end
+
+            elsif (cell == 5) then
+                if (EatFruit()) then
+                    SetCell(currentCell[0], currentCell[1], 1)
+                end
+            end
+            this.chooseDirection()
+
+            var nextCell = NextCellInDir(this.nextDirection, currentCell[0], currentCell[1])
+            if (IsCellPassablePacman(nextCell[0], nextCell[1])) then
+                this.direction = this.nextDirection
+            end
+        end
+
+        var nextCell = NextCellInDir(this.direction, currentCell[0], currentCell[1])
+
+        var isTunnelMove = (currentCell[1] == TUNNEL_ROW and
+        (this.direction == DIRECTION.LEFT or this.direction == DIRECTION.RIGHT) and
+        (currentCell[0] <= 2 or currentCell[0] >= 25))
+
+        if (IsAtCenter(this.x, this.y) and !IsCellPassablePacman(nextCell[0], nextCell[1]) and !isTunnelMove) then
+        // Stop
+        else
+            if (this.direction == DIRECTION.UP) then this.y -= SPEED_PACMAN end
+            if (this.direction == DIRECTION.DOWN) then this.y += SPEED_PACMAN end
+            if (this.direction == DIRECTION.LEFT) then this.x -= SPEED_PACMAN end
+            if (this.direction == DIRECTION.RIGHT) then this.x += SPEED_PACMAN end
+        end
+
+        if (this.x < 0) then
+            this.x = VIEW_W;
+        elsif (this.x > VIEW_W) then
+            this.x = 0;
+        end
+    end
+
+    def draw()
+        if (this.status == STATE.dead) then
+            this.sprDeath.pos = [this.x, this.y]
+            draw.sprite(this.sprDeath)
+        elsif (this.direction == DIRECTION.RIGHT) then
+            this.sprRight.flipX = false
+            this.sprRight.pos = [this.x, this.y]
+            draw.sprite(this.sprRight)
+        elsif (this.direction == DIRECTION.LEFT) then
+            this.sprRight.flipX = true
+            this.sprRight.pos = [this.x, this.y]
+            draw.sprite(this.sprRight)
+        elsif (this.direction == DIRECTION.UP) then
+            this.sprUp.flipY = false
+            this.sprUp.pos = [this.x, this.y]
+            draw.sprite(this.sprUp)
+        elsif (this.direction == DIRECTION.DOWN) then
+            this.sprUp.flipY = true
+            this.sprUp.pos = [this.x, this.y]
+            draw.sprite(this.sprUp)
+        end
+    end
+
+    def reset()
+        println("Resetting Pac-Man to initial state.")
+        this.resetState()
+        this.sprDeath.active = true
+        this.sprDeath.frame = 0
+    end
+
+    def resetState()
+        var startCell = CellToCoords(PACMAN_START_CELL_X, PACMAN_START_CELL_Y)
+        this.x = startCell[0]
+        this.y = startCell[1]
+        this.direction = DIRECTION.LEFT
+        this.nextDirection = DIRECTION.LEFT
+        this.status = STATE.chase
+        this.active = true
+    end
+
+end
+
+// ============================================================
+// GHOST CLASS
+// ============================================================
+class ObjGhost
+
+    def init(nameGhost)
+        var animSpeed = 250
+        var coords
+        this.active = true
+
+        switch (nameGhost)
+            case GHOST.blinky :
+                coords = CellToCoords(12, 11)
+                this.state = STATE.chase
+
+                this.sprRight = LoadSpriteGhost("Sprites/GhostRed/GhostRR.spr", animSpeed)
+                this.sprUp = LoadSpriteGhost("Sprites/GhostRed/GhostRU.spr", animSpeed)
+                this.sprDown = LoadSpriteGhost("Sprites/GhostRed/GhostRD.spr", animSpeed)
+                this.name = GHOST.blinky
+
+            case GHOST.pinky :
+                coords = CellToCoords(13, 14)
+                this.state = STATE.housed
+
+                this.sprRight = LoadSpriteGhost("Sprites/GhostPink/GhostPR.spr", animSpeed)
+                this.sprUp = LoadSpriteGhost("Sprites/GhostPink/GhostPU.spr", animSpeed)
+                this.sprDown = LoadSpriteGhost("Sprites/GhostPink/GhostPD.spr", animSpeed)
+                this.name = GHOST.pinky
+
+            case GHOST.inky :
+                coords = CellToCoords(14, 13)
+                this.state = STATE.housed
+
+                this.sprRight = LoadSpriteGhost("Sprites/GhostGreen/GhostGR.spr", animSpeed)
+                this.sprUp = LoadSpriteGhost("Sprites/GhostGreen/GhostGU.spr", animSpeed)
+                this.sprDown = LoadSpriteGhost("Sprites/GhostGreen/GhostGD.spr", animSpeed)
+                this.name = GHOST.inky
+
+            case GHOST.clyde :
+                coords = CellToCoords(15, 13)
+                this.state = STATE.housed
+
+                this.sprRight = LoadSpriteGhost("Sprites/GhostOrange/GhostOR.spr", animSpeed)
+                this.sprUp = LoadSpriteGhost("Sprites/GhostOrange/GhostOU.spr", animSpeed)
+                this.sprDown = LoadSpriteGhost("Sprites/GhostOrange/GhostOD.spr", animSpeed)
+                this.name = GHOST.clyde
+        end
+
+        this.x = coords[0]
+        this.y = coords[1]
+        this.direction = random(0, 3)
+
+        this.sprFright = sharedSprFright
+        this.sprFrightEnding = sharedSprFrightEnd
+        this.sprEyesH = sharedSprEyesH
+        this.sprEyesV = sharedSprEyesV
+
+        this.sprEyesV.pivot = [8, 8]
+    end
+
+    def reset()
+        var coords
+        this.active = true
+        switch (this.name)
+            case GHOST.blinky :
+                coords = CellToCoords(12, 11)
+                this.state = STATE.chase
+            case GHOST.pinky :
+                coords = CellToCoords(13, 14)
+                this.state = STATE.housed
+            case GHOST.inky :
+                coords = CellToCoords(14, 13)
+                this.state = STATE.housed
+            case GHOST.clyde :
+                coords = CellToCoords(15, 13)
+                this.state = STATE.housed
+        end
+        this.x = coords[0]
+        this.y = coords[1]
+        this.direction = random(0, 3)
+    end
+
+    def draw()
+        if (this.active == true) then
+            if (this.state == STATE.dead) then
+                if (this.direction == DIRECTION.LEFT or this.direction == DIRECTION.RIGHT) then
+                    this.sprEyesH.pos = [this.x, this.y]
+                    draw.sprite(this.sprEyesH)
+                else
+                    this.sprEyesV.pos = [this.x, this.y]
+                    draw.sprite(this.sprEyesV)
+                end
+            elsif (this.state == STATE.frighten) then
+                if (isFrightBlinkActive) then
+                    this.sprFrightEnding.pos = [this.x, this.y]
+                    draw.sprite(this.sprFrightEnding)
+                else
+                    this.sprFright.pos = [this.x, this.y]
+                    draw.sprite(this.sprFright)
+                end
+            elsif (this.direction == DIRECTION.RIGHT) then
+                this.sprRight.flipX = false
+                this.sprRight.pos = [this.x, this.y]
+                draw.sprite(this.sprRight)
+            elsif (this.direction == DIRECTION.LEFT) then
+                this.sprRight.flipX = true
+                this.sprRight.pos = [this.x, this.y]
+                draw.sprite(this.sprRight)
+            elsif (this.direction == DIRECTION.UP) then
+                this.sprUp.pos = [this.x, this.y]
+                draw.sprite(this.sprUp)
+            elsif (this.direction == DIRECTION.DOWN) then
+                this.sprDown.pos = [this.x, this.y]
+                draw.sprite(this.sprDown)
+            end
+        end
+    end
+
+    def isInHouse(currentCol, currentRow)
+        if (currentCol < 0 or currentCol >= MAP_COLUMNAS or currentRow < 0 or currentRow >= MAP_FILAS) then
+            return false
+        end
+
+        if (gridMap.get(currentCol, currentRow) == 4) then
+            if (this.state == STATE.dead) then
+                // Eyes have reached the house - revive the ghost
+                var centerCoords = CellToCoords(13, 14)
+                if (abs(this.x - centerCoords[0]) < 4 and abs(this.y - centerCoords[1]) < 4) then
+                    this.state = STATE.housed
+                    this.x = centerCoords[0]
+                    this.y = centerCoords[1]
+                end
+                var validDirections = GetValidDirections(currentCol, currentRow, this.direction)
+                this.determineTargetDirection(13, 14, validDirections)
+            elsif (this.state == STATE.housed) then
+                var upperLimitCoords = CellToCoords(0, 13)
+                var lowerLimitCoords = CellToCoords(0, 15)
+
+                if (this.y <= upperLimitCoords[1]) then this.direction = DIRECTION.DOWN end
+                if (this.y >= lowerLimitCoords[1]) then this.direction = DIRECTION.UP end
+            else
+                var validDirections = GetValidDirections(currentCol, currentRow, this.direction)
+                this.determineTargetDirection(13, 11, validDirections)
+            end
+            return true
+        end
+        return false
+    end
+
+    def determineTargetDirection(targetCellX, targetCellY, validDirections)
+        var currentCell = CoordToCell(this.x, this.y)
+        var currentCol = currentCell[0]
+        var currentRow = currentCell[1]
+
+        if (validDirections.size() == 0) then
+            return
+        end
+
+        var bestDirection = nil
+        var minDistance = 999999
+
+        foreach (var direction in validDirections)
+            var newCell = NextCellInDir(direction, currentCol, currentRow)
+            var distance = CalculateDistance(newCell[0], newCell[1], targetCellX, targetCellY)
+            if (distance < minDistance) then
+                minDistance = distance
+                bestDirection = direction
+            end
+        end
+
+        if (bestDirection != nil) then
+            this.direction = bestDirection
+        end
+    end
+
+    // ============================================================
+    // Chooses the ghost's direction (uses GridMap distance maps)
+    // ============================================================
+    def chooseDirection()
+        // Sync state with global state (except special states)
+        if (this.state != STATE.housed and this.state != STATE.frighten and this.state != STATE.dead) then
+            this.state = GLOBAL_GHOST_STATE
+        end
+
+        var currentCell = CoordToCell(this.x, this.y)
+        var col = currentCell[0]
+        var fila = currentCell[1]
+
+        // Special logic when inside the house
+        if (this.isInHouse(col, fila)) then
+            return
+        end
+
+        // Get valid directions (for frighten mode and fallback)
+        var validDirections = GetValidDirections(col, fila, this.direction)
+
+        if (validDirections.size() == 0) then
+            return
+        end
+
+        switch (this.state)
+            case STATE.frighten :
+                // Random movement when frightened
+                var randomIndex = random(0, validDirections.size() - 1)
+                this.direction = validDirections[randomIndex]
+
+            case STATE.dead :
+                // Eyes head straight to the house using the distance map
+                var dir = this.getHomeDirection(col, fila)
+                if (dir >= 0) then
+                    this.direction = dir
+                else
+                    // Fallback to manual method if map is not available
+                    this.determineTargetDirection(13, 11, validDirections)
+                end
+
+            case STATE.chase :
+                // CHASE MODE: Use the distance map toward Pacman
+                var dir = this.getChaseDirection(col, fila)
+                if (dir >= 0) then
+                    this.direction = dir
+                else
+                    // Fallback: use original method
+                    var pacmanCell = CoordToCell(PACMAN.x, PACMAN.y)
+                    this.determineTargetDirection(pacmanCell[0], pacmanCell[1], validDirections)
+                end
+
+            case STATE.scatter :
+                // SCATTER MODE: Use pre-calculated map toward the corner
+                var dir = this.getScatterDirection(col, fila)
+                if (dir >= 0) then
+                    this.direction = dir
+                else
+                    // Fallback to manual method
+                    switch (this.name)
+                        case GHOST.blinky :
+                            this.determineTargetDirection(25, 0, validDirections)
+                        case GHOST.pinky :
+                            this.determineTargetDirection(2, 0, validDirections)
+                        case GHOST.inky :
+                            this.determineTargetDirection(27, 30, validDirections)
+                        case GHOST.clyde :
+                            this.determineTargetDirection(0, 30, validDirections)
+                    end
+                end
+        end
+    end
+
+    def reverseDirection()
+        this.direction = GetOppositeDirection(this.direction)
+    end
+
+    // ============================================================
+    // Gets the direction toward the scatter corner
+    // ============================================================
+    def getScatterDirection(col, fila)
+        if (scatterMaps.size() > this.name) then
+            var distance = scatterMaps[this.name].get(col, fila)
+            if (distance <= 2) then
+                // Near the corner - roam randomly to simulate corner patrolling
+                var validDirections = GetValidDirections(col, fila, this.direction)
+                if (validDirections.size() > 0) then
+                    var randomIndex = random(0, validDirections.size() - 1)
+                    return validDirections[randomIndex]
+                end
+                return this.direction
+            end
+            var dir = scatterMaps[this.name].dir(col, fila)
+            return GridDirToGameDir(dir)
+        end
+        return -1
+    end
+
+    // ============================================================
+    // Gets the direction toward Pacman using the distance map
+    // ============================================================
+    def getChaseDirection(col, fila)
+        if (distMapPacman != nil) then
+            var dir = distMapPacman.dir(col, fila)
+            return GridDirToGameDir(dir)
+        end
+        return -1
+    end
+
+    // ============================================================
+    // Gets the direction toward the house (for ghost eyes)
+    // ============================================================
+    def getHomeDirection(col, fila)
+        if (distMapHome != nil) then
+            var dir = distMapHome.dir(col, fila)
+            return GridDirToGameDir(dir)
+        end
+        return -1
+    end
+
+    def update()
+        var currentSpeed = SPEED_GHOST
+        if (this.state == STATE.frighten) then
+            currentSpeed = SPEED_GHOST / 1.5
+        elsif (this.state == STATE.dead) then
+            currentSpeed = SPEED_GHOST * 1.5
+        end
+
+        var currentCell = CoordToCell(this.x, this.y)
+        var newX = this.x
+        var newY = this.y
+
+        var isTunnelMove = (currentCell[1] == TUNNEL_ROW and
+        (this.direction == DIRECTION.LEFT or this.direction == DIRECTION.RIGHT))
+
+        const OFFSET_X = (CELL_SIZE div 2)
+        const OFFSET_Y = (CELL_SIZE div 2)
+
+        var laneX = X_MAPINI + currentCell[0] * CELL_SIZE
+        var laneY = Y_MAPINI + currentCell[1] * CELL_SIZE
+
+        if (this.direction == DIRECTION.UP or this.direction == DIRECTION.DOWN) then
+            newX = laneX + OFFSET_X
+        elsif (this.direction == DIRECTION.LEFT or this.direction == DIRECTION.RIGHT) then
+            newY = laneY + OFFSET_Y
+        end
+
+        if (this.direction == DIRECTION.UP) then newY -= currentSpeed end
+        if (this.direction == DIRECTION.DOWN) then newY += currentSpeed end
+        if (this.direction == DIRECTION.LEFT) then newX -= currentSpeed end
+        if (this.direction == DIRECTION.RIGHT) then newX += currentSpeed end
+
+        var newCell = CoordToCell(newX, newY)
+
+        if (IsCellPassable(newCell[0], newCell[1]) or isTunnelMove) then
+            this.x = newX
+            this.y = newY
+            if (currentCell[0] != newCell[0] or currentCell[1] != newCell[1]) then
+                this.chooseDirection()
+            end
+        else
+            this.chooseDirection()
+        end
+
+        if (this.x < 0) then
+            this.x = VIEW_W
+        elsif (this.x > VIEW_W) then
+            this.x = 0
+        end
+    end
+
+end
+
+// =====================================================
+// Draws the map elements on screen
+// =====================================================
+func DrawMap()
+    const X0 = 3
+    const Y0 = 27
+    const STEPX = CELL_SIZE
+    const STEPY = CELL_SIZE
+
+    imgPacBonus.frame = BonusActive
+
+    draw.gridBitmap(gridMap, 2, BitmapPoint, X0, Y0, STEPX, STEPY)
+    draw.color = 0xD0D0D0
+    if (gridMap.get(1, 3) == 3) then
+        draw.ellipse(X0 + 1 * STEPX, Y0 + 3 * STEPY, 3, 4, true)
+    end
+    if (gridMap.get(26, 3) == 3) then
+        draw.ellipse(X0 + 26 * STEPX, Y0 + 3 * STEPY, 3, 4, true)
+    end
+    if (gridMap.get(1, 23) == 3) then
+        draw.ellipse(X0 + 1 * STEPX, Y0 + 23 * STEPY, 3, 4, true)
+    end
+    if (gridMap.get(26, 23) == 3) then
+        draw.ellipse(X0 + 26 * STEPX, Y0 + 23 * STEPY, 3, 4, true)
+    end
+
+    if (fruitActive and gridMap.get(FRUIT_CELL_X, FRUIT_CELL_Y) == 5) then
+        imgPacBonus.pos = CellToCoords(FRUIT_CELL_X, FRUIT_CELL_Y)
+        draw.sprite(imgPacBonus)
+    end
+end
+
+func SetFruitForLevel()
+    var lastFruitIndex = 0
+    foreach (var fruitData in fruitProgression)
+        if (currentLevel >= fruitData["level"]) then
+            BonusActive = fruitData["fruitIndex"]
+        end
+        lastFruitIndex = fruitData["fruitIndex"]
+    end
+    if (currentLevel > 13) then
+        BonusActive = lastFruitIndex
+    end
+end
+
+func OnFruitTimeout(id, periodic, userData)
+    if (fruitActive) then
+        fruitActive = false
+        SetCell(FRUIT_CELL_X, FRUIT_CELL_Y, 1)
+    end
+    fruitTimerId = -1
+end
+
+func UpdateFruitManager()
+    if (!fruitActive and fruitAppearCount == 0 and dotsEatenCounter >= FRUIT_APPEAR_DOTS_1) then
+        fruitActive = true
+        SetCell(FRUIT_CELL_X, FRUIT_CELL_Y, 5)
+        fruitAppearCount = 1
+        if (fruitTimerId != -1) then Timer.clear(fruitTimerId) end
+        fruitTimerId = Timer.after(FRUIT_DURATION_MS, "OnFruitTimeout")
+        println("First fruit appeared!")
+
+    elsif (!fruitActive and fruitAppearCount == 1 and dotsEatenCounter >= FRUIT_APPEAR_DOTS_2) then
+        fruitActive = true
+        SetCell(FRUIT_CELL_X, FRUIT_CELL_Y, 5)
+        if (fruitTimerId != -1) then Timer.clear(fruitTimerId) end
+        fruitTimerId = Timer.after(FRUIT_DURATION_MS, "OnFruitTimeout")
+        fruitAppearCount = 2
+        println("Second fruit appeared!")
+    end
+end
+
+func UpdateGhostModeManager()
+    modeTimer++
+
+    var currentDuration = levelModePattern[currentModeIndex][1]
+
+    if (modeTimer >= currentDuration) then
+        currentModeIndex++
+        if (currentModeIndex >= levelModePattern.size()) then
+            currentModeIndex = levelModePattern.size() - 1
+        end
+
+        modeTimer = 0
+        GLOBAL_GHOST_STATE = levelModePattern[currentModeIndex][0]
+
+        foreach (var ghost in ghosts)
+            if (ghost.state != STATE.housed) then
+                ghost.reverseDirection()
+            end
+        end
+    end
+end
+
+func UpdateGhostReleaseManager()
+    ghostReleaseTimer++
+
+    if (ghosts[GHOST.pinky].state == STATE.housed and dotsEatenThisLife >= 7) then
+        ghosts[GHOST.pinky].state = STATE.chase
+    end
+
+    if (ghosts[GHOST.inky].state == STATE.housed and dotsEatenThisLife >= 17) then
+        ghosts[GHOST.inky].state = STATE.chase
+    end
+
+    if (ghosts[GHOST.clyde].state == STATE.housed and dotsEatenThisLife >= 32) then
+        ghosts[GHOST.clyde].state = STATE.chase
+    end
+
+    if (ghostReleaseTimer > 10 * FPS) then
+        foreach (var ghost in ghosts)
+            if (ghost.state == STATE.housed) then
+                ghost.state = STATE.chase
+                ghostReleaseTimer = 0
+                break
+            end
+        end
+    end
+end
+
+func onStartFrightBlink(timerId, periodic, userData)
+    isFrightBlinkActive = true
+    frightBlinkTimerId = -1
+end
+
+func onEndFright(timerId, periodic, userData)
+    frightTimerId = -1
+    if (frightBlinkTimerId != -1) then
+        Timer.clear(frightBlinkTimerId)
+        frightBlinkTimerId = -1
+    end
+    isFrightBlinkActive = false
+    foreach (var ghost in ghosts)
+        if (ghost.state == STATE.frighten) then
+            ghost.state = GLOBAL_GHOST_STATE
+        end
+    end
+end
+
+func StartGame()
+    println("Starting Game!!!")
+    PACMAN.reset()
+    SetFruitForLevel()
+    hudNeedsClearing = true
+    StatusGame = GAME_STATE.playing
+
+    // Initialize scatter maps
+    InitScatterMaps()
+
+    foreach (var ghost in ghosts)
+        ghost.active = true
+    end
+end
+
+func LevelComplete()
+    println("LEVEL COMPLETE! Preparing next level...")
+    pause(2000)
+
+    currentLevel++
+    hudNeedsClearing = true
+
+    IniMap()
+    MapToGrid()
+    mapa = nil
+    InitScatterMaps()
+
+    PACMAN.reset()
+
+    foreach (var ghost in ghosts)
+        ghost.reset()
+    end
+
+    dotsEatenCounter = 0
+    dotsEatenThisLife = 0
+    fruitActive = false
+    fruitAppearCount = 0
+    if (fruitTimerId != -1) then Timer.clear(fruitTimerId);fruitTimerId = -1 end
+    ghostReleaseTimer = 0
+    currentModeIndex = 0
+    modeTimer = 0
+    GLOBAL_GHOST_STATE = levelModePattern[0][0]
+
+    if (SPEED_GHOST < 3.5) then SPEED_GHOST += 0.2 end
+    SetFruitForLevel()
+    StatusGame = GAME_STATE.playing
+end
+
+func PlayGame()
+    var remainingDots = totalDots - dotsEatenCounter
+    if (remainingDots == 0) then
+        StatusGame = GAME_STATE.levelcomplete
+        return
+    end
+
+    UpdateGhostModeManager()
+    UpdateGhostReleaseManager()
+    UpdateFruitManager()
+
+    foreach (var ghost in ghosts)
+        ghost.update()
+        ghost.draw()
+    end
+
+    PACMAN.update()
+
+    if (PACMAN.status == STATE.dead) then
+        PlayerLives--
+        hudNeedsClearing = true
+        StatusGame = GAME_STATE.lifelost
+        println("Life lost. Remaining lives: " + PlayerLives.toString())
+    else
+        PACMAN.draw()
+    end
+end
+
+func LifeLost()
+    foreach (var ghost in ghosts)
+        ghost.active = false
+    end
+
+    PACMAN.draw()
+
+    if (!PACMAN.sprDeath.active) then
+        if (PlayerLives <= 0) then
+            println("GAME OVER !!!")
+            StatusGame = GAME_STATE.gameover
+        else
+            dotsEatenThisLife = 0
+            ghostReleaseTimer = 0
+            currentModeIndex = 0
+            modeTimer = 0
+            GLOBAL_GHOST_STATE = levelModePattern[0][0]
+
+            PACMAN.reset()
+
+            foreach (var ghost in ghosts)
+                ghost.reset()
+            end
+
+            StatusGame = GAME_STATE.playing
+        end
+    end
+end
+
+func GameOver()
+    var gameOverText = "GAME OVER"
+    var textX = (VIEW_W / 2) - (gameOverText.size() * 3)
+    var textY = (VIEW_H / 2) - 8
+
+    draw.text(textX, textY, gameOverText, 0xFF0000)
+
+    Display.update()
+    pause(500)
+
+    println("Restarting game for a new round...")
+    currentLevel = 1
+    PlayerLives = 3
+    PlayerScore = 0
+    dotsEatenCounter = 0
+    dotsEatenThisLife = 0
+    fruitActive = false
+    fruitAppearCount = 0
+    if (fruitTimerId != -1) then Timer.clear(fruitTimerId);fruitTimerId = -1 end
+    ghostReleaseTimer = 0
+    currentModeIndex = 0
+    modeTimer = 0
+    GLOBAL_GHOST_STATE = levelModePattern[0][0]
+
+    foreach (var ghost in ghosts)
+        ghost.reset()
+    end
+
+    IniMap()
+    MapToGrid()
+    StatusGame = GAME_STATE.start
+end
+
+func EatFruit()
+    if (fruitActive) then
+        var points = 100
+        foreach (var fruitData in fruitProgression)
+            if (fruitData["fruitIndex"] == BonusActive) then
+                points = fruitData["points"]
+                break
+            end
+        end
+        PlayerScore += points
+        fruitActive = false
+        if (fruitTimerId != -1) then Timer.clear(fruitTimerId);fruitTimerId = -1 end
+
+        println("Fruit eaten! +" + points.toString() + " points")
+        return true
+    end
+    return false
+end
+
+func UpdateGame()
+    switch (StatusGame)
+        case GAME_STATE.start :
+            StartGame()
+        case GAME_STATE.playing :
+            PlayGame()
+        case GAME_STATE.lifelost :
+            LifeLost()
+        case GAME_STATE.levelcomplete :
+            LevelComplete()
+        case GAME_STATE.gameover :
+            GameOver()
+        default :
+    end
+end
+
+// =================================================================
+// Checks collisions between Pacman and the ghosts
+// =================================================================
+func CheckCollisions()
+    foreach (var ghost in ghosts)
+        // Skip ghosts that are only eyes or are inside the house
+        if (ghost.state == STATE.dead) then continue end
+        if (ghost.state == STATE.housed) then continue end
+
+        if (abs(PACMAN.x - ghost.x) < 8 and abs(PACMAN.y - ghost.y) < 8) then
+            if (ghost.state == STATE.frighten) then
+                // Pac-Man eats the ghost - it becomes a pair of eyes
+                PlayerScore += 200
+                ghost.state = STATE.dead
+            else
+                // Ghost eats Pac-Man
+                PACMAN.status = STATE.dead
+                return true
+            end
+        end
+    end
+    return false
+end
+
+func DrawHUD()
+    draw.text(10, 0, "Score: ", 0xffffff)
+    draw.color = 0
+    draw.rect(80, 0, 60, 10, true)
+    draw.text(80, 0, PlayerScore.toString(), 0xffffff)
+
+    if (hudNeedsClearing) then
+        draw.color = 0
+        draw.rect(0, 274, 224, 16, true)
+
+        for (var a = 0;a < PlayerLives - 1;a++)
+            pacmanHud.pos = [a * 16 + 2, 274]
+            draw.sprite(pacmanHud)
+        end
+
+        imgPacBonus.frame = BonusActive
+        imgPacBonus.pos = [208, 280]
+        draw.sprite(imgPacBonus)
+
+        draw.text(170, 274, "L " + currentLevel.toString(), 0xffffff)
+
+        hudNeedsClearing = false
+    end
+end
+
+func ProcessGameLogic()
+    // Update distance maps at the start of each frame
+    if (StatusGame == GAME_STATE.playing) then
+        UpdateDistanceMaps()
+    end
+
+    DrawMap()
+    UpdateGame()
+    DrawHUD()
+end
+
+// ================================================================================================
+// Main
+// ================================================================================================
+println(" >>>> Memory at program start, used memory: ", memUse(), "  free memory: ", memFree())
+InitSystem()
+
+println("Before InitScreen")
+InitScreen()
+println("After InitScreen")
+
+IniMap()
+MapToGrid()
+
+pause(1000)
+
+var PACMAN = ObjPacMan()
+var sharedSprFright = Sprite.load("Sprites/Ghostfrighten/Frighten.spr")
+sharedSprFright.pivot = [8, 8]
+
+var sharedSprFrightEnd = Sprite.load("Sprites/Ghostfrighten/FrightenEnding.spr")
+sharedSprFrightEnd.pivot = [8, 8]
+sharedSprFrightEnd.frameRate = 150
+
+var sharedSprEyesH = Sprite.load("Sprites/Eyes/EyesH.spr")
+sharedSprEyesH.pivot = [8, 8]
+
+var sharedSprEyesV = Sprite.load("Sprites/Eyes/EyesV.spr")
+sharedSprEyesV.pivot = [8, 8]
+
+var ghosts = [
+    ObjGhost(GHOST.blinky),
+    ObjGhost(GHOST.pinky),
+    ObjGhost(GHOST.inky),
+    ObjGhost(GHOST.clyde)
+]
+
+var frameCount = 0
+var lastTime = clock()
+var fpsDisplay = 0
+var currentTime
+
+for (var i = 0;i < 100000;i += 1)
+    frameCount++
+    currentTime = clock()
+    if (currentTime - lastTime >= 1000) then
+        fpsDisplay = frameCount
+        frameCount = 0
+        lastTime = currentTime
+        // println("FPS: ", fpsDisplay, " ,Mem Use: ", memUse(), " ,Mem Free: ", memFree(), "  Time : ", Time.now())
+    end
+
+    ProcessGameLogic()
+
+    Display.update()
+    pause(FRAMEPAUSE)
+end
+
+pause(3000)
+Display.close()
+
