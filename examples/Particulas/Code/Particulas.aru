@@ -1,0 +1,70 @@
+// Particles.aru
+// Author: Jon Otero Fernandez
+// Date: September 6, 2023
+// Particle simulation: 300 particles fall from top, reset at bottom.
+
+use Display;
+
+var display = Display;
+var draw = display.draw;
+
+const WIDTH = 320;
+const HEIGHT = 240;
+const BACKGROUND = 0x000000;
+
+const NUM_PARTICLES = 300;
+var particles[NUM_PARTICLES];
+
+func initGraphics()
+    display.open(WIDTH, HEIGHT);
+    draw.colorBG=BACKGROUND;
+    draw.cls(BACKGROUND);
+    display.update();
+end
+
+func initParticles()
+    for (var i = 0; i < NUM_PARTICLES; i++)
+        particles[i] = {
+            "x": random(0.0,1.0) * WIDTH,
+            "y": random(0.0,1.0) * HEIGHT,
+            "speed": 0.5 + random(0.0,1.0) * 4.0  // Speed between 0.5 and 2.5
+        };
+    end
+end
+
+func updateParticles()
+    for (var i = 0; i < NUM_PARTICLES; i++)
+        (particles[i])["y"] += (particles[i])["speed"];
+
+        // Reset particle to top when it exits the screen
+        if (particles[i].get("y") > HEIGHT) then
+            (particles[i])["y"] = 0;
+            (particles[i])["x"] = random(0.0,1.0) * WIDTH;
+            (particles[i])["speed"] = 0.5 + random(0.0,1.0) * 2.0;
+        end
+        draw.color=random()
+        draw.setPixel([(particles[i])["x"], (particles[i])["y"]]);
+    end
+end
+
+func main()
+    // Wait time per platform
+    var timeWait=30
+    if (platform()==HW_ESP32) then
+        timeWait=0;
+    end
+
+    initGraphics();
+    initParticles();
+
+    while (true)
+        draw.cls(BACKGROUND);
+        updateParticles();
+        display.update();
+        pause(timeWait);
+    end
+
+    display.close();
+end
+
+main();

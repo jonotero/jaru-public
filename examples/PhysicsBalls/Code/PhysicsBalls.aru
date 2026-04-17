@@ -1,0 +1,238 @@
+// ═══════════════════════════════════════════════════════════════════
+//  PhysicsBalls.aru  ·  JARU physics engine demo
+//  Features: gravity, ball-ball collisions, bouncing on static bumpers,
+//            floor accumulation and periodic explosion.
+//
+//  Sprites: Sprites/Bola{GR,GN,GV,GA,MR,MN,MV,MA,PR,PN,PV,PA}.spr
+// ═══════════════════════════════════════════════════════════════════
+use Display, Sprite, Scene
+
+// ─── Settings ────────────────────────────────────────────────────
+const ANCHO       = 320
+const ALTO        = 240
+const GRAVEDAD    = 500
+const N_BOLAS     = 60
+const N_BUMPERS   = 5
+const BOOM_MS     = 6000   // milisegundos entre explosiones
+const BOOM_FUERZA = 800
+const MARGEN      = 16       // grosor de paredes y suelo
+
+// ─── Display ─────────────────────────────────────────────────────
+Display.open(ANCHO, ALTO)
+Display.mode(2)
+Display.autoClear = false
+var draw = Display.draw
+
+// ═══════════════════════════════════════════════════════════════════
+// LOAD BALL BITMAPS
+// ═══════════════════════════════════════════════════════════════════
+var bmpBallS1 = Sprite.load("Sprites/BolaPA.spr")
+var bmpBallS2 = Sprite.load("Sprites/BolaPV.spr")
+var bmpBallS3 = Sprite.load("Sprites/BolaPN.spr")
+var bmpBallS4 = Sprite.load("Sprites/BolaPR.spr")
+
+var bmpBallM1 = Sprite.load("Sprites/BolaMN.spr")
+var bmpBallM2 = Sprite.load("Sprites/BolaMV.spr")
+var bmpBallM3 = Sprite.load("Sprites/BolaMR.spr")
+var bmpBallM4 = Sprite.load("Sprites/BolaMA.spr")
+
+var bmpBallL1 = Sprite.load("Sprites/BolaGR.spr")
+var bmpBallL2 = Sprite.load("Sprites/BolaGV.spr")
+var bmpBallL3 = Sprite.load("Sprites/BolaGA.spr")
+var bmpBallL4 = Sprite.load("Sprites/BolaGN.spr")
+
+var BALLS_SMALL  = [bmpBallS1, bmpBallS2, bmpBallS3, bmpBallS4]
+var BALLS_MEDIUM = [bmpBallM1, bmpBallM2, bmpBallM3, bmpBallM4]
+var BALLS_LARGE  = [bmpBallL1, bmpBallL2, bmpBallL3, bmpBallL4]
+
+// [bitmapArray, radius, centerX, centerY, mass]
+var BALL_SIZES = [
+    [BALLS_SMALL,  3, 5, 5, 0.8],
+    [BALLS_MEDIUM, 5, 7, 7, 1.2],
+    [BALLS_LARGE,  7, 9, 9, 1.8]
+]
+
+// ─── Scene (physics engine) ────────────────────────────────────
+var escena = Scene.new()
+escena.stepRate = 60
+
+escena.gravity = GRAVEDAD
+
+// ─── Walls and floor (STATIC, rectangular colliders) ────────────
+var paredIzq = Sprite.new(bmpBallS1)
+paredIzq.pos = [0, -2000]
+paredIzq.bodyType = Sprite.STATIC
+paredIzq.pivot = [0, 0]
+paredIzq.collider = [0, 0, MARGEN, ALTO + 2000]
+escena.addSprite(paredIzq)
+
+var paredDer = Sprite.new(bmpBallS1)
+paredDer.pos = [ANCHO - MARGEN, -2000]
+paredDer.bodyType = Sprite.STATIC
+paredDer.pivot = [0, 0]
+paredDer.collider = [0, 0, MARGEN, ALTO + 2000]
+escena.addSprite(paredDer)
+
+var suelo = Sprite.new(bmpBallS1)
+suelo.pos = [0, ALTO - MARGEN]
+suelo.bodyType = Sprite.STATIC
+suelo.pivot = [0, 0]
+suelo.collider = [0, 0, ANCHO, MARGEN]
+suelo.friction = 0.6
+escena.addSprite(suelo)
+
+// ─── Static bumpers ────────────────────────────────────────────
+const BUMP_CONFIG = [
+    [ 70,  96, 11],
+    [163,  74, 13],
+    [252, 100, 10],
+    [112, 143,  9],
+    [216, 143,  9]
+]
+
+var bumpers    = []
+var radiosBump = []
+
+foreach (var cfg in BUMP_CONFIG)
+    var rb = cfg[2]
+    var b = Sprite.new(bmpBallS1)
+    b.pos = [cfg[0] - rb, cfg[1] - rb]
+    b.bodyType = Sprite.STATIC
+    b.pivot = [0, 0]
+    b.collider = [rb, rb, rb]
+    b.elasticity = 0.80
+    escena.addSprite(b)
+    bumpers.append(b)
+    radiosBump.append(rb)
+end
+
+// ═══════════════════════════════════════════════════════════════════
+// CREATE BALLS
+// ═══════════════════════════════════════════════════════════════════
+func crearBola(x, y, vx, vy)
+    var sizeIndex = random(0, 2)
+    var sizeData = BALL_SIZES[sizeIndex]
+
+    var bitmapArray = sizeData[0]
+    var radio   = sizeData[1]
+    var centroX = sizeData[2]
+    var centroY = sizeData[3]
+    var masa    = sizeData[4]
+
+    var colorIndex = random(0, 3)
+    var bitmap = bitmapArray[colorIndex]
+
+    var bola = Sprite.new(x, y, bitmap)
+    bola.bodyType = Sprite.DYNAMIC
+    bola.mass = masa + random(0, 5) / 10.0
+    bola.elasticity = random(70, 90) / 100.0
+    bola.velocity = [vx, vy]
+    bola.pivot = [0, 0]
+    bola.collider = [centroX, centroY, radio]
+
+    escena.addSprite(bola)
+    return bola
+end
+
+var bolas = []
+
+for (var i = 0; i < N_BOLAS; i++)
+    var bola = crearBola(
+        MARGEN + 10 + random(0, ANCHO - MARGEN * 2 - 20),
+        -random(0, 400),
+        random(-60, 60),
+        random(0, 80)
+    )
+    bolas.append(bola)
+end
+
+// ─── Main loop ──────────────────────────────────────────────────
+var tAnterior = clock()
+var tBoom     = clock()
+var flashBoom = 0
+var fpsCounter = 0
+var lastFpsTime = clock()
+
+while (true)
+    var ahora = clock()
+    var dt    = (ahora - tAnterior) / 1000.0
+    tAnterior = ahora
+    if (dt > 0.033) then dt = 0.033 end
+
+    // ── Periodic explosion ───────────────────────────────────────
+    if (ahora - tBoom > BOOM_MS) then
+        tBoom     = ahora
+        flashBoom = 600
+        var cx = ANCHO / 2
+        var cy = ALTO * 0.65
+
+        for (var i = 0; i < N_BOLAS; i++)
+            var bx = bolas[i].x + bolas[i].width / 2
+            var by = bolas[i].y + bolas[i].height / 2
+            var dx = bx - cx
+            var dy = by - cy
+            var d  = sqrt(dx*dx + dy*dy) + 1.0
+            bolas[i].velocity = [
+                dx / d * BOOM_FUERZA,
+                dy / d * BOOM_FUERZA - 120
+            ]
+        end
+    end
+
+    // ── Physics ────────────────────────────────────────────────────
+    escena.update()
+
+    // ── Recover off-screen balls ─────────────────────────────────
+    foreach (var bola in bolas)
+        if (bola.y > ALTO + 50 or bola.y < -500 or bola.x < -100 or bola.x > ANCHO + 100) then
+            bola.pos = [MARGEN + 10 + random(0, ANCHO - MARGEN * 2 - 20), -10]
+            bola.velocity = [random(-40, 40), random(50, 100)]
+        end
+    end
+
+    // ── Render ────────────────────────────────────────────────────
+    draw.cls(0x090912)
+
+    // Visible floor
+    draw.color = 0x222244
+    draw.rect(0, ALTO - MARGEN, ANCHO, MARGEN, true)
+    draw.color = 0x333388
+    draw.line(MARGEN, ALTO - MARGEN, ANCHO - MARGEN, ALTO - MARGEN)
+
+    // Bumpers (double ring + center)
+    for (var i = 0; i < N_BUMPERS; i++)
+        var cx = bumpers[i].x + radiosBump[i]
+        var cy = bumpers[i].y + radiosBump[i]
+        var r  = radiosBump[i]
+        draw.color = 0x6666FF
+        draw.circle(cx, cy, r)
+        draw.color = 0x333399
+        draw.circle(cx, cy, r - 4)
+        draw.color = 0x9999FF
+        draw.circle(cx, cy, 3, true)
+    end
+
+    // Balls (actual sprites)
+    Draw.sprite(bolas)
+
+    // Flash BOOM
+    if (flashBoom > 0) then
+        flashBoom = flashBoom - (dt * 1000)
+        if (flashBoom > 200) then
+            draw.color = 0xFFDD44
+            draw.font(4)
+            draw.text(ANCHO / 2 - 18, ALTO / 2, "BOOM!")
+        end
+    end
+
+    Display.update()
+
+    fpsCounter++
+    if (ahora - lastFpsTime >= 1000) then
+        println("FPS: ", fpsCounter)
+        fpsCounter = 0
+        lastFpsTime = ahora
+    end
+
+    pause(8)
+end
