@@ -1,1 +1,0 @@
-{ "version" : 1, "imageNodeID" : 8, "imageRelativePath" : "Images\\spritesheet01.png", "animation" : { "fps" : 15, "alignment" : 0, "isTransparent" : false, "backgroundColor" : 4473924, "gridWidth" : 16, "gridHeight" : 16 }, "regions" : [{ "x" : 126, "y" : 41, "width" : 20, "height" : 7 }] }
