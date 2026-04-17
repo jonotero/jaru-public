@@ -1,0 +1,80 @@
+// Sensor MAX30102
+// Created: 2025-11-19
+// Author: Jon Otero
+// Version: 1.0.0
+// Description: MAX30102 driver for JARU
+
+use I2C
+
+class MAX30102
+
+    // Constructor
+    def init(i2c_port)
+        this.port = i2c_port;
+        this.addr = 87; // 0x57
+
+        // 1. Reset sensor
+        this.write(0x09, 0x40);
+
+        // 2. Interrupt config (Enable New FIFO Data Ready)
+        this.write(0x02, 0xC0);
+        this.write(0x03, 0x00);
+
+        // 3. FIFO config (Average 4 samples, Roll-over enable)
+        this.write(0x08, 0x10);
+
+        // 4. Mode config (SpO2 Mode: Red + IR)
+        this.write(0x09, 0x03);
+
+        // 5. SpO2 config (ADC Range 4096nA, 100Hz, PulseWidth 411us)
+        this.write(0x0A, 0x27);
+
+        // 6. LED power (approx 6.4mA - enough to detect finger)
+        this.write(0x0C, 0x1F); // LED1 (Red)
+        this.write(0x0D, 0x1F); // LED2 (IR)
+
+        // 7. Clear FIFO pointers
+        this.write(0x04, 0x00); // Write ptr
+        this.write(0x06, 0x00); // Read ptr
+        this.write(0x05, 0x00); // Overflow
+
+        println("[MAX30102] Driver started..");
+    end
+
+    // Write register
+    def write(reg, val)
+        I2C.writeReg(this.port, this.addr, reg, val);
+    end
+
+    // Read 1-byte register
+    def read(reg)
+        return I2C.readReg(this.port, this.addr, reg);
+    end
+
+    // Read raw sensor data (Red, IR) — returns [Red, IR] or nil
+    def readSensor()
+        // Read write and read pointers
+        var ptrWrite = this.read(0x04);
+        var ptrRead = this.read(0x06);
+
+        // Equal pointers means no new data
+        if (ptrWrite == ptrRead) then return nil; end;
+
+        var bytes = I2C.transfer(this.port, this.addr, [0x07], 6);
+
+        if (len(bytes) == 6) then
+            // Convert 3 bytes to integer (Red)
+            var red = (bytes[0] * 65536) + (bytes[1] * 256) + bytes[2];
+            // Mask junk bits (18 effective bits)
+            red = red & 0x03FFFF;
+
+            // Convert 3 bytes to integer (IR)
+            var ir = (bytes[3] * 65536) + (bytes[4] * 256) + bytes[5];
+            ir = ir & 0x03FFFF;
+
+            return [red, ir];
+        end
+
+        return nil;
+    end
+end

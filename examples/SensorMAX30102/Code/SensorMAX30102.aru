@@ -1,0 +1,207 @@
+// Test de Sensor MAX30102
+// Created: 2025-11-19
+// Author: Jon Otero
+// Version: 1.0.0
+// Description:
+// Test del sensor
+// ------------------------------------------------------------------
+// MAX30102 driver for JARU
+// Target: Freenove ESP32-S3 (FNK0086)
+// ------------------------------------------------------------------
+use I2C, Display
+
+import "DRV_MAX30102.aru"
+
+// DISPLAY SETTINGS
+const VIEW_W = 320
+const VIEW_H = 240
+
+Display.orientation(1); // 1 = Horizontal (Landscape)
+Display.open(VIEW_W, VIEW_H);
+Display.mode(2); // Double Buffering (draws to memory, then flushes)
+
+var draw = Display.draw;
+
+// Colors
+const C_BLACK = 0x000000
+const C_WHITE = 0xFFFFFF
+const C_RED   = 0xFF0000
+const C_GREEN = 0x00FF00
+const C_BLUE  = 0x0000FF
+const C_GRAY  = 0x404040
+
+
+// BIOMETRIC MONITOR (BPM + SpO2)
+
+println("---------------------------------");
+println("   JARU PULSE OXIMETER        ");
+println("---------------------------------");
+
+var port = I2C.PORT0;
+var pinSDA = 2;
+var pinSCL = 1;
+
+if (I2C.init(port, pinSDA, pinSCL, 100000)) then
+
+    I2C.setTimeOut(port, 50);
+    var sensor = MAX30102(port);
+
+    // --- ALGORITHM VARIABLES ---
+
+    // IR filters (heartbeat)
+    var dcFilterIR = 0;
+    var acSignalIR = 0;
+
+    // Red filters (oxygen)
+    var dcFilterRed = 0;
+    var acSignalRed = 0;
+
+    // Heartbeat logic
+    var beatDetected = false;
+    var lastSampleIdx = 0;
+    var lastBeatIdx = 0;
+    var avgBPM = 0;
+    var firstReading = true;
+
+    // SpO2 logic
+    var avgSpO2 = 0;
+
+    // --- UI VARIABLES ---
+    var pulseRadius = 10;
+    var statusMsg = "PUT FINGER";
+    var statusColor = C_RED;
+
+    println("Calibrating... (Put your finger)");
+
+    while (true)
+        var data = sensor.readSensor();
+
+        if (data != nil) then
+            var red = data[0]; // Red channel
+            var ir = data[1];  // Canal IR
+
+            lastSampleIdx = lastSampleIdx + 1;
+
+            // 1. FINGER DETECTOR
+            if (ir < 50000) then
+                dcFilterIR = 0;
+                dcFilterRed = 0;
+                beatDetected = false;
+                avgBPM = 0;
+                avgSpO2 = 0;
+                firstReading = true;
+                statusMsg = "NO FINGER";
+                statusColor = C_RED;
+                pulseRadius = 10;
+
+                if ((lastSampleIdx % 100) == 0) then print("."); end;
+            else
+                statusMsg = "MEASURING...";
+                statusColor = C_GREEN;
+                // 2. DC FILTERS (separate heartbeat baseline)
+                if (dcFilterIR == 0) then dcFilterIR = ir; end;
+                if (dcFilterRed == 0) then dcFilterRed = red; end;
+
+                // Exponential smoothing (alpha 0.95)
+                dcFilterIR = (dcFilterIR * 0.95) + (ir * 0.05);
+                dcFilterRed = (dcFilterRed * 0.95) + (red * 0.05);
+
+                // Calculate AC component (pulse wave)
+                acSignalIR = ir - dcFilterIR;
+                acSignalRed = red - dcFilterRed;
+
+                // 3. HEARTBEAT DETECTOR (BPM) - IR is stronger
+                if (acSignalIR > 100) then
+                    if (beatDetected == false) then
+                        beatDetected = true;
+
+                        // Visual animation: heart grows
+                        pulseRadius = 25;
+
+                        var delta = lastSampleIdx - lastBeatIdx;
+                        lastBeatIdx = lastSampleIdx;
+
+                        if (delta > 30) then
+                            if (delta < 150) then
+                                // --- BPM CALCULATION ---
+                                var instantBPM = 6000 / delta;
+                                if (firstReading) then avgBPM = instantBPM; else avgBPM = (avgBPM * 0.9) + (instantBPM * 0.1); end;
+
+                                // --- SpO2 CALCULATION (OXYGEN) ---
+                                // Ratio R = (AC_Red / DC_Red) / (AC_IR / DC_IR)
+                                var num = (acSignalRed * 100) / dcFilterRed;
+                                var den = (acSignalIR * 100) / dcFilterIR;
+
+                                if (den != 0) then
+                                    var R = num / den;
+
+                                    // Standard linear approximation: SpO2 = 104 - 17 * R
+                                    var instantSpO2 = 104 - (17 * R);
+
+                                    // Clamp to 100%
+                                    if (instantSpO2 > 100) then instantSpO2 = 100; end;
+                                    if (instantSpO2 < 0) then instantSpO2 = 0; end;
+
+                                    // SpO2 smoothing
+                                    if (firstReading) then
+                                        avgSpO2 = instantSpO2;
+                                        firstReading = false;
+                                    else
+                                        avgSpO2 = (avgSpO2 * 0.9) + (instantSpO2 * 0.1);
+                                    end
+                                end
+                            end
+                        end
+                    end
+                else
+                    if (acSignalIR < 0) then beatDetected = false; end;
+                end
+            end
+        end
+        // VISUAL LOGIC (GUI)
+
+        // Heartbeat shrink effect
+        if (pulseRadius > 10) then pulseRadius = pulseRadius - 1; end;
+
+        // 1. Clear screen (black background)
+        draw.color=C_BLACK
+        draw.rect(0, 0, VIEW_W, VIEW_H, true);
+
+        // 2. Draw title and status
+        draw.text(80, 10, "JARU OXIMETER", C_WHITE);
+        draw.text(100, 30, statusMsg, statusColor);
+
+        // 3. Draw values
+        if (avgBPM > 0) then
+            // BPM
+            draw.text(40, 80, "BPM", C_GRAY);
+            draw.text(30, 100, avgBPM.toInt().toString(), C_WHITE);
+
+            // SpO2
+            draw.text(220, 80, "SpO2", C_GRAY);
+            draw.text(210, 100, avgSpO2.toInt().toString() + "%", C_BLUE);
+
+            // Simple bar chart for oxygen
+            draw.color=C_GRAY
+            draw.rect(220, 130, 10, 50, true); // Bar background
+            var alturaBarra = (avgSpO2 * 50) / 100;
+            draw.color=C_BLUE
+            draw.rect(220, 130 + (50 - alturaBarra), 10, alturaBarra, true);
+
+        else
+            draw.text(100, 100, "--", C_GRAY);
+        end
+
+        // 4. Animated heart (red circle)
+        draw.color=C_RED
+        draw.ellipse(160, 160, pulseRadius, pulseRadius, true);
+
+        // 5. Debug Text
+        draw.text(10, 220, "Mem: " + memUse().toString(), C_GRAY);
+
+        // 6. Update screen
+        Display.update();
+    end
+else
+    println("[ERROR] I2C failure");
+end
