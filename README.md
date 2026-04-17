@@ -2,7 +2,7 @@
 
 This repository is the **public hub for feedback and resources related to the JARU programming language and its IDE**, as well as a collection of **official example code** written in JARU.
 
-> **IMPORTANT:** The **JARU IDE source code is NOT open source** and **is not included in this repository**.  
+> **NOTE:** The **The JARU IDE itself is not open source.** and **is not included in this repository**.  
 > This repository is intended for **public issue tracking, feature requests, and example code only**.
 
 ---
@@ -55,9 +55,7 @@ Please use the provided **Issue templates** to ensure clear and useful reports.
 ### 🐛 Report a Bug or Request a Feature
 Go to the Issues section of this repository and choose the appropriate template:
 
-👉 https://github.com/YOUR_GITHUB_USER/jaru-public/issues/new/choose
-
-*(Replace `YOUR_GITHUB_USER` with your actual GitHub username.)*
+👉 https://github.com/jonotero/jaru-public/issues/new/choose
 
 ---
 
