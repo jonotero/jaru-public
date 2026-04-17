@@ -1,8 +1,0 @@
-{
-  "pins" : [
-    {
-      "gpio" : 2,
-      "connectedTo" : "Blue LED"
-    }
-  ]
-}
