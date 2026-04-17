@@ -1,0 +1,1 @@
+{ "version" : 1, "imageNodeID" : 4, "imageRelativePath" : "Images\\Bolas.png", "animation" : { "fps" : 15, "alignment" : 0, "isTransparent" : true, "backgroundColor" : 0, "gridWidth" : 16, "gridHeight" : 16 }, "regions" : [{ "x" : 168, "y" : 72, "width" : 12, "height" : 12 }] }

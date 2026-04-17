@@ -1,0 +1,32 @@
+// Palindromes
+// Created: 2025-07-21
+// Author: Jon Otero
+// Version: 1.0.0
+
+
+// Reverses a string
+func invertirCadena(cadena)
+    var cadenaInvertida = ""
+
+    for (var i = len(cadena) - 1; i >= 0; i--)
+        cadenaInvertida = cadenaInvertida + cadena[i]
+    end
+
+    return cadenaInvertida
+end
+
+
+println("--- Palindrome Checker ---")
+println("Enter a word to check if it is a palindrome:")
+
+var textoOriginal = readLine()
+var textoInvertido = invertirCadena(textoOriginal)
+
+println("-> Original text: ", textoOriginal)
+println("-> Reversed text: ", textoInvertido)
+
+if (textoOriginal == textoInvertido) then
+    println("Result: It is a palindrome!")
+else
+    println("Result: It is not a palindrome.")
+end
