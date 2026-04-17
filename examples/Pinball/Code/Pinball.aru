@@ -1,0 +1,893 @@
+// Pinball
+// Created: 2025-07-07
+// Author: Jon Otero
+// Version: 1.0.0
+
+
+/* =========================================================================================================
+ * File: Pinball.aru
+ * Author: Jon Otero Fernandez
+ * Date: Septiembre 6, 2023
+ * Description : Minimal pinball game in JARU
+ *
+ * Based on pinball.py - Minimal pinball game in MicroPython based on code from Ten Minute Physics Tutorial
+ * "How to write a pinball simulation" for using the display driver from
+ * https://github.com/russhughes/st7789_mpy.
+ *
+ * Tutorial Links:
+ *
+ * Gameplay Video:
+ *
+ * Requires:
+ *
+ * This file incorporates work covered by the following copyright and permission notice.
+ * Modifications and additions Copyright (c) 2022 Russ Hughes and released under the same
+ * terms as the original code.
+ *
+ * Copyright 2021 Matthias Müller - Ten Minute Physics
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy of
+ * this software and associated documentation files (the "Software"), to deal in
+ * the Software without restriction, including without limitation the rights to
+ * use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies
+ * of the Software, and to permit persons to whom the Software is furnished to do
+ * so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+========================================================================================================= */
+
+use Display, Math, GPIO, Input
+
+var draw=Display.draw;
+
+func text_color()
+    // return the next color from the color wheel
+    var color = 0
+    while (true)
+        color = (color + 1) mod 255
+    end
+end
+
+// ------------------------------------------------------------
+// scale position to screen x coordinate
+// ------------------------------------------------------------
+func scale_x(pos)
+    return pos.x * SCALE_X
+end;
+
+// ------------------------------------------------------------
+// scale position to screen y coordinate
+// ------------------------------------------------------------
+func scale_y(pos)
+    return HEIGHT - pos.y * SCALE_Y
+end;
+
+// ------------------------------------------------------------
+// return the closest point on the segment ab to point p
+// ------------------------------------------------------------
+func closest_point_on_segment(p, a, b)
+    var ab = b - a;
+    var t = ab * ab
+    if (t == 0.0) then
+        return a.clone()
+    end
+    t = Math.max(0.0, Math.min(1.0, ((p*ab) - (a*ab)) / t))
+    var closest = a.clone()
+    return closest.add(ab, t)
+end
+
+func pos_to_list(pos)
+    // convert pos to screen [x,y] coordinate list
+    return [scale_x(pos), scale_y(pos)]
+end;
+
+// ===================================================
+//
+// Button handling
+//
+// ===================================================
+class Buttons
+    def init()
+        GPIO.pinmode(38,GPIO.INPUT)
+        GPIO.pinmode(39,GPIO.INPUT)
+
+        this.fire = 0
+        this.thrust = 0
+        this.hyper = 0
+    end
+
+    def left()
+        return GPIO.read(38)
+    end
+
+    def right()
+        return GPIO.read(39)
+    end
+
+end
+
+// vector math ---------------------------------------
+
+class Vector2
+
+    def init()
+        // create a new vector
+        this.x = 0
+        this.y = 0
+        this.color = 0xFFFFFF
+    end
+
+    def init(x, y)
+        // create a new vector
+        this.x = x
+        this.y = y
+        this.color = 0xFFFFFF
+    end
+
+    def init(x, y, c)
+        // create a new vector
+        this.x = x
+        this.y = y
+        this.color = c
+    end
+
+    def set(v)
+        // set this vector to the values of another vector
+        this.x = v.x
+        this.y = v.y
+        this.color = v.color
+    end
+
+    def add(v,s)
+        // add a vector scaled by s to this vector
+        this.x += v.x * s
+        this.y += v.y * s
+        return this;
+    end
+
+    def subtract(v, s)
+        /// subtract a vector scaled by s from this vector
+        this.x -= v.x * s
+        this.y -= v.y * s
+    end;
+
+    operator - (v1,v2)
+        var result=Vector2(0,0);
+        result.x=v1.x-v2.x;
+        result.y=v1.y-v2.y;
+        return(result);
+    end;
+
+    def length()
+        // return the length of this vector
+        return sqrt(this.x * this.x + this.y * this.y)
+    end;
+
+    def scale(s)
+        // scale this vector by s
+        this.x *= s
+        this.y *= s
+    end
+
+    // return the dot product of this vector and another vector
+    operator * (v1,v2)
+        return(v1.x * v2.x +v1.y * v2.y);
+    end;
+
+    def perp()
+        // return a perpendicular vector
+        return Vector2(-this.y, this.x, this.color)
+    end
+    operator == (v1,v2)
+        return ((v1.x==v2.x) and (v1.y==v2.y))
+    end;
+
+end;
+
+// ------------------------------------------------------
+
+// object classes ---------------------------------------
+
+class Ball
+    // Class to track a ball
+
+    // create a new ball
+    def init( radius, mass, pos, vel, restitution)
+        this.radius = radius
+        this.mass = mass
+        this.restitution = restitution
+        this.pos = pos.clone()
+        this.last = pos.clone()
+        this.vel = vel.clone()
+        this.size = int(radius * SCALE_RADIUS)
+    end
+
+    def simulate( dt, gravity)
+        // update the ball position in dt seconds
+        this.last.set(this.pos)
+        this.vel.add(gravity, dt)
+        this.pos.add(this.vel, dt)
+    end
+end
+
+// Class to contain an obstacle
+class Obstacle
+    def init(radius, pos, pushVel)
+        // create a new obstacle
+        this.radius = radius
+        this.size = int(radius * SCALE_RADIUS)
+        this.pos = pos.clone()
+        this.pushVel = pushVel
+    end
+end;
+
+class Flipper
+    // Class to contain a flipper
+    def init(radius, pos, length, restAngle, maxRotation, angularVelocity)
+        // create a new flipper
+        this.radius = radius
+        this.size = int(radius * SCALE_RADIUS)
+        this.pos = pos.clone()
+        this.length = length
+        this.restAngle = restAngle
+        this.maxRotation = abs(maxRotation)
+        this.sign = Math.signCopy(1, maxRotation)
+        this.angularVelocity = angularVelocity
+
+        // variable
+        this.rotation = 0.0
+        this.prevRotation = 0.0
+        this.currentAngularVelocity = 0.0
+        this.pressed = false
+    end
+
+    def simulate(dt)
+        // update the flipper position in dt seconds
+        this.prevRotation = this.rotation
+        if (this.pressed) then
+            this.rotation = Math.min(this.rotation + dt * this.angularVelocity, this.maxRotation)
+        else
+            this.rotation = Math.max(this.rotation - dt * this.angularVelocity, 0.0)
+        end
+        this.currentAngularVelocity = this.sign * (this.rotation - this.prevRotation) / dt
+    end
+
+    def select(pos)
+        // return True if pos is within the flipper
+        var d = this.pos - pos;
+        return vlenght(d.x , d.y) < this.length
+    end
+
+    def getTip(rotation)
+        // return the tip position of the flipper
+        if (rotation==nil) then
+            rotation = this.rotation
+        end
+        var angle = this.restAngle + this.sign * rotation
+        var direction = Vector2(Math.cos(angle), Math.sin(angle))
+        var tip = this.pos.clone()
+        return tip.add(direction, this.length)
+    end;
+
+    def rot_pos_in_dir(pos, direction)
+        // rotate pos in direction
+        pos.add(direction, this.length)
+        var result = this.pos.clone()
+        result.add(Vector2(0.0, this.radius),1)
+        return result
+    end;
+
+    def direction_from_rot( rotation)
+        //return the direction of the flipper at rotation
+        if (rotation==nil) then
+            rotation = this.rotation
+        end
+        var angle = this.restAngle + this.sign * rotation
+        var cos_angle = Math.cos(angle)
+        var sin_angle = Math.sin(angle)
+        return Vector2(cos_angle, sin_angle)
+    end
+
+    def draw( rotation, color)
+        // draw the flipper
+        if (rotation==nil)then
+            rotation = this.rotation
+        end;
+        var angle = this.restAngle + this.sign * rotation
+
+        var direction = Vector2(Math.cos(angle), Math.sin(angle))
+        var tip = this.pos.clone()
+        tip.add(direction, this.length)
+
+        direction = this.direction_from_rot(rotation)
+        tip = this.pos.clone()
+        var tip_top = this.rot_pos_in_dir(tip, direction)
+        tip_top.add(direction, this.length)
+
+        var tip_bot = this.pos.clone()
+        tip_bot.add(Vector2(0.0, - this.radius),1)
+        var base_top = this.rot_pos_in_dir(tip_bot, direction)
+        base_top.add(direction, 0)
+
+        var base_bot = this.pos.clone()
+        base_bot.add(Vector2(0.0, - this.radius),1)
+        base_bot.add(direction, 0)
+        draw.color=color
+        draw.circle(scale_x(this.pos), scale_y(this.pos), this.size, true)
+
+        draw.line(scale_x(base_top), scale_y(base_top), scale_x(tip_top), scale_y(tip_top))
+
+        draw.line(scale_x(this.pos), scale_y(this.pos), scale_x(tip), scale_y(tip))
+
+        draw.line(scale_x(base_bot), scale_y(base_bot), scale_x(tip_bot), scale_y(tip_bot))
+
+        draw.circle(scale_x(tip), scale_y(tip), this.size, true)
+    end
+end
+
+class Table
+    // Class to contain the table
+
+    def init()
+        // create a new table
+        this.gravity = Vector2(0.0, -0.80)
+        this.dt = 1.0 / FPS
+        this.ticks = int(this.dt * 1000)
+        this.game_over = false
+        this.score = 0
+        this.multiball = 0
+        this.ball = 3
+        this.gutter = 0
+        this.balls = []
+
+        this.border = [
+            Vector2(0.74, 0.25),
+            Vector2(0.995, 0.4),
+            Vector2(0.995, 1.4)]
+
+        // draw arc from left wall to right wall using line segments
+        var arcRadius = 0.5
+        var arcCenter = Vector2(0.5, 1.375)
+        var arcStartAngle = 0
+        var arcEndAngle = Math.PI
+        var arcSegments = 11
+        var arcAngleStep = (arcEndAngle - arcStartAngle) / arcSegments
+
+        var i = 0
+        while (i <= arcSegments)
+            var angle = arcStartAngle + i * arcAngleStep
+            var x = arcCenter.x + arcRadius * Math.cos(angle)
+            var y = arcCenter.y + arcRadius * Math.sin(angle)
+            this.border.append(Vector2(x, y))
+            i += 1
+        end
+
+        this.border.append(Vector2(0, 0.4))
+        this.border.append(Vector2(0.26, 0.25))
+        this.gutter = len(this.border)
+        this.border.append(Vector2(0.26, 0.0))  // gutter floor
+        this.border.append(Vector2(0.74, 0.0))  // gutter floor
+
+        // convert border to scaled polygon
+        this.wall = []
+
+        var aux;
+        foreach (var p in this.border)
+            aux=pos_to_list(p)
+            this.wall.append(aux[0])
+            this.wall.append(aux[1])
+        end;
+        aux=pos_to_list(this.border[0])
+
+        this.wall.append(aux[0])
+        this.wall.append(aux[1])
+
+        // obstacles
+        this.obstacles = [
+            Obstacle(0.04, Vector2(0.10, 1.68), 0.8),
+            Obstacle(0.08, Vector2(0.5, 1.45, 0xff0000), 1.5),
+            Obstacle(0.08, Vector2(0.74, 1.2, 0xff0000), 1.5),
+            Obstacle(0.08, Vector2(0.26, 1.2, 0xff0000), 1.5),
+            Obstacle(0.08, Vector2(0.5, 0.95, 0xff0000), 1.5),
+            Obstacle(0.04, Vector2(0.13, 0.8, 0xffff00), 1.5),
+            Obstacle(0.04, Vector2(0.87, 0.8, 0xffff00), 1.5),
+            Obstacle(0.04, Vector2(0.15, 0.6, 0x00ff00), 1.5),
+            Obstacle(0.04, Vector2(0.85, 0.6, 0x00ff00), 1.5)
+            ]
+
+        // flippers
+        var radius = 0.035
+        var length = 0.175
+        var maxRotation = 1.0
+        var restAngle = 0.5
+        var angularVelocity = FLIPPER_SPEED
+
+        var left_pos = Vector2(0.26, 0.22)
+        var right_pos = Vector2(0.74, 0.22)
+
+        this.flippers = [
+            Flipper(radius, left_pos, length, -restAngle, maxRotation, angularVelocity),
+            Flipper(radius, right_pos, length, Math.PI + restAngle, -maxRotation, angularVelocity)
+            ]
+    end;
+
+    def reset()
+        // reset the table
+        this.game_over = false
+        this.ball = 3
+        this.score = 0
+
+        print_right("M  ", 0.25)
+
+        update_score()
+        update_ball()
+    end;
+
+    def add_ball()
+        // add a ball to the table
+        var radius = 0.03
+        var mass = Math.PI * radius * radius
+        var pos = Vector2(0.95, 0.5, 0xffffff)
+        var vel = Vector2(0, random(2.0, 3.0));
+        this.balls.append(Ball(radius, mass, pos, vel, 0.2))
+    end;
+
+    def ball_reset()
+        // reset the ball
+        table.multiball = 0
+        if (!REDRAW_EVERY_FRAME) then
+            //println("Every frame",REDRAW_EVERY_FRAME)
+            this.draw_border()
+            this.draw_obstacles()
+            this.draw_flippers()
+        end
+        update_ball()
+        update_score()
+        ball_countdown()
+        this.add_ball()
+    end
+
+    def draw_border()
+        draw.color=0xffffff
+        draw.polygon(this.wall)
+    end;
+
+    def draw_balls()
+        // draw the balls on the table
+        foreach (var ball in this.balls)
+            var x = scale_x(ball.pos)
+            var y = scale_y(ball.pos)
+            draw.color=BACKGROUND
+            draw.circle (scale_x(ball.last), scale_y(ball.last), ball.size, true)
+            draw.color=ball.pos.color
+            draw.circle(x, y, ball.size, true)
+        end
+    end
+
+    def draw_obstacles()
+        // draw the obstacles on the table
+        foreach (var obstacle in this.obstacles)
+            draw.color=obstacle.pos.color
+            draw.circle(scale_x(obstacle.pos), scale_y(obstacle.pos), obstacle.size,true)
+        end
+    end
+
+    def draw_flippers()
+        // draw the flippers on the table
+        foreach (var flipper in this.flippers)
+            if (flipper.currentAngularVelocity != 0) then
+                flipper.draw(flipper.prevRotation, BACKGROUND)
+            end;
+            flipper.draw(nil,0xffffff)
+        end;
+    end;
+
+    def simulate()
+        // simulate the table
+        foreach (var flipper in this.flippers)
+            flipper.simulate(this.dt)
+        end;
+
+        var ball_count = len(this.balls)
+        var i = 0
+        while (i < ball_count)
+            var ball = this.balls[i]
+            ball.simulate(this.dt, this.gravity)
+
+            var j = i + 1
+            while (j < ball_count)
+                var ball2 = this.balls[j]
+                handle_ball_ball_collision(ball, ball2)
+                j += 1
+            end
+
+            foreach (var obstacle in this.obstacles)
+                handle_ball_obstacle_collision(ball, obstacle)
+            end
+
+
+            foreach (var flipper in this.flippers)
+                handle_ball_flipper_collision(ball, flipper)
+            end
+
+
+            if (handle_ball_border_collision(ball, this.border) == this.gutter) then
+                draw.color=BACKGROUND
+                draw.circle(scale_x(ball.last), scale_y(ball.last), ball.size, true)
+
+                var balls = len(this.balls)
+                if (balls == 1) then
+                    this.ball -= 1
+                    update_ball()
+                end
+                if (this.ball > 0) then
+                    this.balls.remove(ball)
+                    if (balls == 1) then
+                        this.ball_reset()
+                    end
+                else
+                    this.game_over = true
+                end
+                ball_count -= 1  // Decrement counter since a ball was removed
+            else
+                i += 1
+            end
+        end;
+    end;
+end;
+
+
+// ------------ collision handling ------------
+
+
+func handle_ball_ball_collision(ball1, ball2)
+    // handle a collision between two balls
+    var restitution = Math.min(ball1.restitution, ball2.restitution)
+    var direction =ball2.pos - ball1.pos;
+    //direction.subtract_vectors(ball2.pos, ball1.pos)
+    //var d =vlenght(direction.x , direction.y)
+    var d = direction.length()
+    if (d == 0.0 or d > ball1.radius + ball2.radius) then
+        return
+    end
+    draw.color= BACKGROUND
+    draw.circle(scale_x(ball1.pos), scale_y(ball1.pos), ball1.size, true)
+    draw.circle(scale_x(ball2.pos), scale_y(ball2.pos), ball2.size, true)
+
+    direction.scale(1.0 / d)
+
+    var corr = (ball1.radius + ball2.radius - d) / 2.0
+    ball1.pos.add(direction, -corr)
+    ball2.pos.add(direction, corr)
+
+    var v1 = ball1.vel * direction;
+    var v2 = ball2.vel * direction;
+
+    var m1 = ball1.mass
+    var m2 = ball2.mass
+
+    var newV1 = (m1 * v1 + m2 * v2 - m2 * (v1 - v2) * restitution) / (m1 + m2)
+    var newV2 = (m1 * v1 + m2 * v2 - m1 * (v2 - v1) * restitution) / (m1 + m2)
+
+    ball1.vel.add(direction, newV1 - v1)
+    ball2.vel.add(direction, newV2 - v2)
+end
+
+// ------------------------
+
+func handle_ball_obstacle_collision(ball, obstacle)
+    // handle a collision between a ball and an obstacle
+    var direction = ball.pos - obstacle.pos;
+    //var d =vlenght(direction.x , direction.y)
+    var d = direction.length()
+    if (d == 0.0 or d > ball.radius + obstacle.radius) then
+        return
+    end
+
+    direction.scale(1.0 / d)
+
+    var corr = ball.radius + obstacle.radius - d
+    ball.pos.add(direction, corr)
+
+    var v = ball.vel*direction
+    ball.vel.add(direction, obstacle.pushVel - v)
+
+    table.score += 1
+
+    var ball_count = len(table.balls)
+    if (ball_count == 1) then
+        table.multiball += 1
+        if (table.multiball == MULTIBALL_SCORE) then
+            table.multiball = 0
+            table.add_ball()
+        end
+    end
+
+end
+
+// ------------------------
+
+
+func handle_ball_flipper_collision(ball, flipper)
+    // handle a collision between a ball and a flipper
+    var closest = closest_point_on_segment(ball.pos, flipper.pos, flipper.getTip(nil))
+    var direction = ball.pos - closest;
+    //direction.subtract_vectors(ball.pos, closest)
+    var d = direction.length()
+    //var d =vlenght(direction.x , direction.y)
+    if (d == 0.0 or d > ball.radius + flipper.radius)then
+        return
+    end
+
+    direction.scale(1.0 / d)
+
+    var corr = (ball.radius + flipper.radius - d)
+    ball.pos.add(direction, corr)
+
+    // update velocitiy
+    var radius = closest.clone()
+    radius.add(direction, flipper.radius)
+    radius.subtract(flipper.pos,1)
+    var surfaceVel = radius.perp()
+    surfaceVel.scale(flipper.currentAngularVelocity)
+    var v = ball.vel*direction
+    var vnew = surfaceVel*direction
+    ball.vel.add(direction, vnew - v)
+end
+
+// ------------------------
+
+func  handle_ball_border_collision(ball, border)
+    // handle a collision between a ball and a border"""
+    // find closest segment
+    var d = Vector2()
+    var closest = Vector2()
+    var ab = Vector2()
+    var normal = Vector2()
+    var wall = 0
+    var minDist = 0.0
+
+    var border_length = len(border)
+    var i = 0
+    while (i < border_length)
+        var a = border[i]
+        var b = border[(i + 1) mod border_length]
+        var c = closest_point_on_segment(ball.pos, a, b)
+        d=ball.pos - c;
+        var dist = d.length()
+        if (i == 0 or dist < minDist) then
+            wall = i
+            minDist = dist
+            closest.set(c)
+            ab=b - a;
+            normal = ab.perp()
+        end
+        i ++
+    end
+
+    // push out
+    d=ball.pos-closest
+    //var d =vlenght(d.x , d.y)
+    var dist = vlenght(d.x , d.y)
+    if (dist == 0.0) then
+        d.set(normal)
+        dist = normal.length()
+        //dist = vlenght(normal.x , normal.y)
+    end
+
+    d.scale(1.0 / dist)
+
+    if ((d*normal) >= 0.0) then
+        if (dist > ball.radius) then
+            return 0
+        end
+        ball.pos.add(d, ball.radius - dist)
+    else
+        ball.pos.add(d, -(dist + ball.radius))
+    end
+
+    // update velocity
+    var v = ball.vel * d
+    var vnew = abs(v) * ball.restitution
+
+    ball.vel.add(d, vnew - v)
+    return wall
+end
+
+// ------------ Text routines ------------
+
+func center_on(text, y)
+    // center text on y
+    var x = (WIDTH >> 1) - ((10 * len(text)) >> 1)
+    draw.text( x, int(HEIGHT - y * SCALE_Y), text , 0x0ffffff)
+end
+
+func print_at(text, x, y)
+    // print text at x,y
+    draw.text( int(x * SCALE_X), int(HEIGHT - y * SCALE_Y),text, 0xffffff)
+end
+
+func print_right(text, y)
+    // print text right aligned at y
+    var x = WIDTH - (10 * len(text))
+    draw.text( x, int(HEIGHT - y * SCALE_Y), text, 0xffffff)
+end
+
+func update_score()
+    // update the score
+    var auxScore=MULTIBALL_SCORE-table.multiball
+    print_right(auxScore.toString(), 0.25)
+    print_right(table.score.toString(), 0.08)
+end
+
+func update_ball()
+    // update the ball count
+    print_at(table.ball.toString(), 0.0, 0.08)
+end
+
+func ball_countdown()
+    // countdown before the ball is released"""
+    var bold_font;
+    for (var i = 3; i > 0; i--)
+        center_on(i.toString(), 1.3);
+        pause(1000);
+        //println("Memoria usada : ",memuse())
+        //println("Memoria libre : ",memfree())
+    end
+
+    center_on(' ', 1.3)
+    if (REDRAW_EVERY_FRAME==false) then
+        table.draw_border()
+        table.draw_obstacles()
+    end
+end
+
+func print_game_over()
+    var bold_font;
+    var font;
+
+    // print game over
+    center_on("GAME", 1.65)
+    center_on("OVER", 1.30)
+    center_on(" Press ", 0.82)
+    center_on(" Button ", 0.72)
+    center_on(" To ",  0.62)
+    center_on(" Start ", 0.52)
+end
+
+func game_over()
+    // game over, man, game over
+    print_game_over()
+    Display.update();
+    pause(1000)
+
+    // Wait for buttons to be released
+    while (Input.pressed(0) or Input.pressed(1))
+        pause(100)
+        Display.update()
+    end
+
+    // Color cycle game over message while waitiing for a button to be pressed
+    // var color = text_color()
+    //while (left_flipper and right_flipper)
+    //    print_game_over(next(color))
+    //    pause(100)
+    //end
+
+    draw.cls(BACKGROUND);
+    Display.update();
+end
+
+// ------------ the big show ------------
+
+func start_game()
+    // start the game and loop
+    while (table.game_over == false)
+        table.reset()
+        table.ball_reset()
+        var last;
+        while (table.game_over == false)
+            last = clock()
+
+            table.flippers[0].pressed = Input.pressed(0)
+            table.flippers[1].pressed = Input.pressed(1)
+
+            table.simulate()
+
+            if (REDRAW_EVERY_FRAME) then
+                table.draw_border()
+                table.draw_obstacles()
+            end
+
+            table.draw_flippers()
+            table.draw_balls()
+            update_score()
+            Display.update();
+
+           if ((clock() - last) < table.ticks) then
+                //println("Ticks : ",table.ticks - (clock() - last) )
+                pause(table.ticks - (clock() - last))
+           else
+                //println("Ticks : ",table.ticks - (clock() - last) )
+           end
+            //pause(1)
+
+        end
+        //println("Memoria usada : ",memuse())
+        game_over()
+    end
+end
+
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+/////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+var FPS=60 // Windows default
+// ------------ set constants  ------------
+if (platform()==HW_ESP32) then
+   FPS = 30   // ESP32
+end
+
+const FLIPPER_SPEED = 10;
+const MULTIBALL_SCORE = 5     // points to start multiball
+var REDRAW_EVERY_FRAME = true;
+const BACKGROUND = 0x0000ff
+
+// ------------ set up the display ------------
+println("MemFree : ", memFree())
+
+println("Orientation")
+Display.orientation(0);
+println("Mode 1")
+Display.mode(1) // Direct screen drawing mode
+println("Open")
+Display.open(240,240);
+
+
+// Configure input per platform
+if (platform() == HW_ESP32) then
+    Input.map(0, 38)    // Left flipper - GPIO 38
+    Input.map(1, 39)    // Right flipper - GPIO 39
+else
+    Input.map(0, "Z")   // Left flipper - Z key
+    Input.map(1, "X")   // Right flipper - X key
+end
+
+Display.update();
+
+println("Display mode : ", Display.mode())
+draw.colorBG=BACKGROUND
+draw.cls(BACKGROUND);
+Display.update();
+
+const HEIGHT = Display.height
+const WIDTH = Display.width
+
+const MAX_HEIGHT = 1.88
+
+const SCALE_X = WIDTH
+const SCALE_Y = HEIGHT / MAX_HEIGHT
+const SCALE_RADIUS = Math.min(SCALE_X, SCALE_Y)
+
+var buttons = Buttons()
+
+
+println("Starting Table")
+var table = Table()
+println("Table started")
+start_game()
+
+
+Display.close()
+println("Completed successfully")
