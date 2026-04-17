@@ -1,0 +1,840 @@
+/*
+====================================================================
+File: xnom.aru
+Description: Horizontal Shoot'em Up / R-Type style game demo
+             in JARU for LilyGo T-Watch S3
+
+Author: Jon Otero Fernandez
+Year: 2026
+
+WIN32 Controls:
+  Arrows     : Move ship
+  SPACE      : Shoot
+  ESC        : Exit
+
+ESP32 Controls:
+  GPIO 38    : Move up
+  GPIO 37    : Shoot
+  GPIO 39    : Move Down
+====================================================================
+*/
+
+use Display, Sprite, Input
+
+var display = Display
+var draw = Display.draw
+
+// ======================================================
+// Screen constants
+// ======================================================
+const WIDTH = 320
+const HEIGHT = 240
+const VIEW_W = 320
+const VIEW_H = 240
+
+// ======================================================
+// Game constants
+// ======================================================
+const PLAYER_SPEED = 4
+const PLAYER_SHOT_SPEED = 8
+const ENEMY_SPEED = 3
+const ENEMY_SHOT_SPEED = 4
+const METEOR_BIG_SPEED = 1
+const METEOR_SMALL_SPEED = 2
+
+const MAX_PLAYER_SHOTS = 3
+const MAX_ENEMY_SHOTS = 4
+const MAX_ENEMIES = 4
+const MAX_METEORS_BIG = 2
+const MAX_METEORS_SMALL = 3
+
+const ENEMY_SHOOT_PROB = 2
+const ENEMY_SPAWN_MS = 2500
+const METEOR_SPAWN_MS = 3500
+const PLAYER_SHOOT_MS = 350
+
+// Collision radii (adjust according to actual sprite sizes)
+const COL_PLAYER = 8
+const COL_ENEMY = 10
+const COL_SHOT = 5
+const COL_METEOR_BIG = 14
+const COL_METEOR_SMALL = 8
+
+// Input actions
+const ACT_UP = 0
+const ACT_DOWN = 1
+const ACT_LEFT = 2
+const ACT_RIGHT = 3
+const ACT_FIRE = 4
+const ACT_EXIT = 5
+
+// ======================================================
+// Game variables
+// ======================================================
+var PlayerScore = 0
+var HiScore = 0
+var PlayerLives = 3
+var gameOver = false
+var gameRunning = true
+var playerInvulnerable = 0
+
+// Object lists
+var playerShots = []
+var enemyShots = []
+var enemies = []
+var meteorsBig = []
+var meteorsSmall = []
+
+// Timers
+var lastEnemySpawn = 0
+var lastMeteorSpawn = 0
+var lastPlayerShot = 0
+
+// Background stars
+const NUM_STARS = 40
+var starsX[NUM_STARS]
+var starsY[NUM_STARS]
+var starsSpeed[NUM_STARS]
+var starsColor[NUM_STARS]
+
+
+// FPS
+var frameCount = 0
+var lastFpsTime = 0
+var fpsDisplay = 0
+
+// Difficulty
+var diffLevel = 0
+var enemySpawnInterval = ENEMY_SPAWN_MS
+var meteorSpawnInterval = METEOR_SPAWN_MS
+
+// Explosions
+const EXPLOSION_DURATION_MS = 400
+var explosions = []
+
+// ======================================================
+// Sprite loading (templates)
+// ======================================================
+println(">>> Loading sprites...")
+
+var playerSpr = Sprite.load("Sprites/Player.spr")
+
+var enemy01Template = Sprite.load("Sprites/Enemy01.spr")
+
+var meteorBigTemplate = Sprite.load("Sprites/MeteorBig.spr")
+
+var meteorSmallTemplate = Sprite.load("Sprites/MeteorSmall.spr")
+
+var playerShotTemplate = Sprite.load("Sprites/PlayerShot.spr")
+
+var enemyShotTemplate = Sprite.load("Sprites/EnemyShot.spr")
+
+var bgplanet = Bitmap.load("Images/bg-planet.bmp")
+
+var explosion=Sprite.load("Sprites/Explosion.spr")
+explosion.pivot = [8, 8]
+explosion.loop = false
+
+println(">>> Sprites loaded. Total mem: ", memUse(), "  Free: ", memFree())
+
+// ======================================================
+// Class for managing explosions
+// ======================================================
+class Explosion
+    def init(x, y)
+        this.sprite = Sprite.new(explosion)
+        this.sprite.pivot = [8, 8]
+        this.sprite.x = x
+        this.sprite.y = y
+        this.sprite.loop = false
+        this.sprite.frame = 0
+        this.initTime = clock()
+    end
+end
+
+
+// Background planet (slow parallax)
+var planetW = bgplanet.width()
+var planetH = bgplanet.height()
+var planetX = VIEW_W + 20
+var planetY = VIEW_H - planetH      // Fixed at the bottom edge (it's a half planet)
+const PLANET_SPEED = 0.5
+var planetAccum = 0.0
+
+println(">>> Planet: ", planetW, "x", planetH, " px")
+
+// ======================================================
+// Configure player sprite
+// ======================================================
+playerSpr.pivot = [8, 8]
+playerSpr.x = 30
+playerSpr.y = VIEW_H / 2
+playerSpr.frameRate = 0    // No automatic animation: we control the frame manually
+playerSpr.loop = false     // Frame 0 = normal, 1 = descending, 2 = ascending
+
+// ======================================================
+// Initialize screen
+// ======================================================
+func InitScreen()
+    Display.viewWidth = VIEW_W
+    Display.viewHeight = VIEW_H
+
+    Display.open(WIDTH, HEIGHT)
+    Display.orientation(0)
+    Display.autoClear = true
+    Display.mode(2)
+    draw.colorBG = 0x000000
+    Display.update()
+end
+
+// ======================================================
+// Initialize controls
+// ======================================================
+func InitInput()
+    if (platform() == HW_ESP32) then
+        Input.map(ACT_UP, 39)
+        Input.map(ACT_FIRE, 37)
+        Input.map( ACT_DOWN , 38)
+    else
+        Input.map(ACT_UP, "UP")
+        Input.map(ACT_DOWN, "DOWN")
+        Input.map(ACT_LEFT, "LEFT")
+        Input.map(ACT_RIGHT, "RIGHT")
+        Input.map(ACT_FIRE, "SPACE")
+        Input.map(ACT_EXIT, "ESC")
+    end
+end
+
+// ======================================================
+// Initialize star field
+// ======================================================
+func InitStars()
+    for (var i = 0; i < NUM_STARS; i++)
+        starsX[i] = random(0, VIEW_W)
+        starsY[i] = random(0, VIEW_H)
+        starsSpeed[i] = random(1, 3)
+        if (starsSpeed[i] == 1) then
+            starsColor[i] = 0x404040
+        elsif (starsSpeed[i] == 2) then
+            starsColor[i] = 0x808080
+        else
+            starsColor[i] = 0xC0C0C0
+        end
+    end
+end
+
+// ======================================================
+// Draw star field (simple parallax)
+// ======================================================
+func DrawStars()
+    for (var i = 0; i < NUM_STARS; i++)
+        starsX[i] -= starsSpeed[i]
+        if (starsX[i] < 0) then
+            starsX[i] = VIEW_W
+            starsY[i] = random(0, VIEW_H)
+        end
+        draw.color = starsColor[i]
+        draw.setPixel(starsX[i], starsY[i])
+    end
+end
+
+// ======================================================
+// Update and draw background planet (slow parallax)
+// ======================================================
+func UpdateAndDrawPlanet()
+    // Accumulate fractional movement for smoothness
+    planetAccum += PLANET_SPEED
+    if (planetAccum >= 1.0) then
+        planetX -= int(planetAccum)
+        planetAccum = planetAccum - int(planetAccum)
+    end
+
+    // Only reappears when it has COMPLETELY exited from the left
+    if (planetX + planetW < 0) then
+        planetX = VIEW_W + random(10, 40)
+    end
+
+    draw.bitmap(planetX, planetY, bgplanet)
+end
+
+// ======================================================
+// Spawn functions
+// ======================================================
+func SpawnEnemy()
+    if (enemies.size() >= MAX_ENEMIES) then return end
+
+    var e = Sprite.new(enemy01Template)
+    e.pivot = [8, 8]
+    e.x = VIEW_W + 16
+    e.y = random(25, VIEW_H - 25)
+    e.frameRate = 64
+    e.loop = true
+    enemies.append(e)
+end
+
+func SpawnMeteorBig()
+    if (meteorsBig.size() >= MAX_METEORS_BIG) then return end
+
+    var m = Sprite.new(meteorBigTemplate)
+    m.pivot = [16, 16]
+    m.x = VIEW_W + 20
+    m.y = random(30, VIEW_H - 30)
+    m.frameRate = 100
+    m.loop = true
+    meteorsBig.append(m)
+end
+
+func SpawnMeteorSmall()
+    if (meteorsSmall.size() >= MAX_METEORS_SMALL) then return end
+
+    var m = Sprite.new(meteorSmallTemplate)
+    m.pivot = [8, 8]
+    m.x = VIEW_W + 12
+    m.y = random(15, VIEW_H - 15)
+    m.frameRate = 80
+    m.loop = true
+    meteorsSmall.append(m)
+end
+
+// ======================================================
+// Shots
+// ======================================================
+func PlayerShoot(current_time)
+    if (playerShots.size() >= MAX_PLAYER_SHOTS) then return end
+    if (current_time - lastPlayerShot < PLAYER_SHOOT_MS) then return end
+
+    var s = Sprite.new(playerShotTemplate)
+    s.pivot = [4, 4]
+    s.x = playerSpr.x + 12
+    s.y = playerSpr.y
+    s.loop = true
+    playerShots.append(s)
+    lastPlayerShot = current_time
+end
+
+func EnemyShoot(enemy)
+    if (enemyShots.size() >= MAX_ENEMY_SHOTS) then return end
+
+    var s = Sprite.new(enemyShotTemplate)
+    s.pivot = [4, 4]
+    s.x = enemy.x - 8
+    s.y = enemy.y
+    s.flipX=true
+    s.loop = true
+    enemyShots.append(s)
+end
+
+// ======================================================
+// Update player
+// ======================================================
+func UpdatePlayer(current_time)
+    var movingUp = false
+    var movingDown = false
+
+    if (platform() == HW_ESP32) then
+        // ESP32: GPIO 38 = up, GPIO 37 = fire, GPIO 39 = down
+        if (Input.pressed(ACT_DOWN)) then
+            playerSpr.y += PLAYER_SPEED
+            movingDown = true
+        end
+        if (Input.pressed(ACT_UP)) then
+            playerSpr.y -= PLAYER_SPEED
+            movingUp = true
+        end
+        if (Input.pressed(ACT_FIRE)) then
+            PlayerShoot(current_time)
+        end
+    else
+        // WIN32: Full keyboard control
+        if (Input.pressed(ACT_UP)) then
+            playerSpr.y -= PLAYER_SPEED
+            movingUp = true
+        end
+        if (Input.pressed(ACT_DOWN)) then
+            playerSpr.y += PLAYER_SPEED
+            movingDown = true
+        end
+        if (Input.pressed(ACT_LEFT)) then
+            playerSpr.x -= PLAYER_SPEED
+        end
+        if (Input.pressed(ACT_RIGHT)) then
+            playerSpr.x += PLAYER_SPEED
+        end
+        if (Input.pressed(ACT_FIRE)) then
+            PlayerShoot(current_time)
+        end
+        if (Input.justPressed(ACT_EXIT)) then
+            gameRunning = false
+        end
+    end
+
+    // Select frame based on vertical direction
+    // Frame 0 = normal ship, Frame 1 = turning down, Frame 2 = turning up
+    if (movingDown) then
+        playerSpr.frame = 1
+    elsif (movingUp) then
+        playerSpr.frame = 2
+    else
+        playerSpr.frame = 0
+    end
+
+    // Limit player position
+    if (playerSpr.x < 10) then playerSpr.x = 10 end
+    if (playerSpr.x > VIEW_W / 2) then playerSpr.x = VIEW_W / 2 end
+    if (playerSpr.y < 12) then playerSpr.y = 12 end
+    if (playerSpr.y > VIEW_H - 12) then playerSpr.y = VIEW_H - 12 end
+
+    // Decrement invulnerability
+    if (playerInvulnerable > 0) then
+        playerInvulnerable--
+    end
+end
+
+// ======================================================
+// Update player projectiles
+// ======================================================
+func UpdatePlayerShots()
+    for (var i = playerShots.size() - 1; i >= 0; i--)
+        playerShots[i].x += PLAYER_SHOT_SPEED
+        if (playerShots[i].x > VIEW_W + 10) then
+            playerShots.remove(playerShots[i])
+        end
+    end
+end
+
+// ======================================================
+// Update enemy projectiles
+// ======================================================
+func UpdateEnemyShots()
+    for (var i = enemyShots.size() - 1; i >= 0; i--)
+        enemyShots[i].x -= ENEMY_SHOT_SPEED
+        if (enemyShots[i].x < -10) then
+            enemyShots.remove(enemyShots[i])
+        end
+    end
+end
+
+// ======================================================
+// Update enemies
+// ======================================================
+func UpdateEnemies()
+    for (var i = enemies.size() - 1; i >= 0; i--)
+        var e = enemies[i]
+
+        // Horizontal movement
+        e.x -= ENEMY_SPEED
+
+        // Oscillating vertical movement
+        var yShift = random(0, 4) - 2
+        e.y += yShift
+        if (e.y < 20) then e.y = 20 end
+        if (e.y > VIEW_H - 20) then e.y = VIEW_H - 20 end
+
+        // Shoot randomly
+        if (random(0, 100) < ENEMY_SHOOT_PROB) then
+            EnemyShoot(e)
+        end
+
+        // Remove if off screen
+        if (e.x < -30) then
+            enemies.remove(e)
+        end
+    end
+end
+
+// ======================================================
+// Update meteors
+// ======================================================
+func UpdateMeteors()
+    for (var i = meteorsBig.size() - 1; i >= 0; i--)
+        meteorsBig[i].x -= METEOR_BIG_SPEED
+        meteorsBig[i].y += random(0, 2) - 1
+        if (meteorsBig[i].x < -30) then
+            meteorsBig.remove(meteorsBig[i])
+        end
+    end
+
+    for (var i = meteorsSmall.size() - 1; i >= 0; i--)
+        meteorsSmall[i].x -= METEOR_SMALL_SPEED
+        meteorsSmall[i].y += random(0, 2) - 1
+        if (meteorsSmall[i].x < -20) then
+            meteorsSmall.remove(meteorsSmall[i])
+        end
+    end
+end
+
+// ======================================================
+// Enemy and meteor spawner
+// ======================================================
+func UpdateSpawners(current_time)
+    if (current_time - lastEnemySpawn > enemySpawnInterval) then
+        SpawnEnemy()
+        lastEnemySpawn = current_time
+    end
+
+    if (current_time - lastMeteorSpawn > meteorSpawnInterval) then
+        if (random(0, 1) == 0) then
+            SpawnMeteorBig()
+        else
+            SpawnMeteorSmall()
+        end
+        lastMeteorSpawn = current_time
+    end
+end
+
+// ======================================================
+// Player hit
+// ======================================================
+func PlayerHit()
+    if (playerInvulnerable > 0) then return end
+
+    PlayerLives--
+    println(">>> Player hit! Lives: ", PlayerLives)
+
+    if (PlayerLives <= 0) then
+        gameOver = true
+        println(">>> GAME OVER! Final score: ", PlayerScore)
+    else
+        // Reposition player
+        playerSpr.x = 30
+        playerSpr.y = VIEW_H / 2
+
+        // Clear enemy projectiles (mercy after death)
+        enemyShots = []
+
+        // Invulnerability period (~2 seconds at 30fps)
+        playerInvulnerable = 60
+    end
+end
+
+// ======================================================
+// Explosion management
+// ======================================================
+func SpawnExplosion(x, y)
+    explosions.append(Explosion(x, y))
+end
+
+func UpdateExplosions()
+    var now = clock()
+    for (var i = explosions.size() - 1; i >= 0; i--)
+        if (now - explosions[i].initTime > EXPLOSION_DURATION_MS) then
+            explosions.remove(explosions[i])
+        end
+    end
+end
+
+// ======================================================
+// Collision detection
+// ======================================================
+func CheckCollisions()
+    // Player shots vs enemies
+    for (var i = playerShots.size() - 1; i >= 0; i--)
+        var shot = playerShots[i]
+        var shotHit = false
+        for (var j = enemies.size() - 1; j >= 0; j--)
+            var e = enemies[j]
+            if (abs(shot.x - e.x) < (COL_SHOT + COL_ENEMY) and abs(shot.y - e.y) < (COL_SHOT + COL_ENEMY)) then
+                PlayerScore += 100
+                SpawnExplosion(e.x, e.y)
+                enemies.remove(e)
+                shotHit = true
+                println("  Enemy destroyed! Score: ", PlayerScore)
+                break
+            end
+        end
+        if (shotHit) then
+            playerShots.remove(shot)
+            continue
+        end
+
+        // Player shots vs big meteors
+        for (var j = meteorsBig.size() - 1; j >= 0; j--)
+            var m = meteorsBig[j]
+            if (abs(shot.x - m.x) < (COL_SHOT + COL_METEOR_BIG) and abs(shot.y - m.y) < (COL_SHOT + COL_METEOR_BIG)) then
+                PlayerScore += 50
+                SpawnExplosion(m.x, m.y)
+                // Big meteor breaks into a small one
+                var mx = m.x
+                var my = m.y
+                meteorsBig.remove(m)
+                if (meteorsSmall.size() < MAX_METEORS_SMALL) then
+                    var frag = Sprite.new(meteorSmallTemplate)
+                    frag.pivot = [8, 8]
+                    frag.x = mx
+                    frag.y = my
+                    frag.frameRate = 80
+                    frag.loop = true
+                    meteorsSmall.append(frag)
+                end
+                shotHit = true
+                println("  Big meteor destroyed! Score: ", PlayerScore)
+                break
+            end
+        end
+        if (shotHit) then
+            playerShots.remove(shot)
+            continue
+        end
+
+        // Player shots vs small meteors
+        for (var j = meteorsSmall.size() - 1; j >= 0; j--)
+            var m = meteorsSmall[j]
+            if (abs(shot.x - m.x) < (COL_SHOT + COL_METEOR_SMALL) and abs(shot.y - m.y) < (COL_SHOT + COL_METEOR_SMALL)) then
+                PlayerScore += 25
+                SpawnExplosion(m.x, m.y)
+                meteorsSmall.remove(m)
+                shotHit = true
+                println("  Small meteor destroyed! Score: ", PlayerScore)
+                break
+            end
+        end
+        if (shotHit) then
+            playerShots.remove(shot)
+        end
+    end
+
+    // If player is invulnerable, skip collisions against them
+    if (playerInvulnerable > 0) then return end
+
+    // Enemy shots vs player
+    for (var i = enemyShots.size() - 1; i >= 0; i--)
+        var shot = enemyShots[i]
+        if (abs(shot.x - playerSpr.x) < (COL_SHOT + COL_PLAYER) and abs(shot.y - playerSpr.y) < (COL_SHOT + COL_PLAYER)) then
+            enemyShots.remove(shot)
+            PlayerHit()
+            return
+        end
+    end
+
+    // Enemies vs player (body-to-body collision)
+    for (var i = enemies.size() - 1; i >= 0; i--)
+        var e = enemies[i]
+        if (abs(e.x - playerSpr.x) < (COL_ENEMY + COL_PLAYER) and abs(e.y - playerSpr.y) < (COL_ENEMY + COL_PLAYER)) then
+            SpawnExplosion(e.x, e.y)
+            enemies.remove(e)
+            PlayerHit()
+            return
+        end
+    end
+
+    // Big meteors vs player
+    for (var i = meteorsBig.size() - 1; i >= 0; i--)
+        var m = meteorsBig[i]
+        if (abs(m.x - playerSpr.x) < (COL_METEOR_BIG + COL_PLAYER) and abs(m.y - playerSpr.y) < (COL_METEOR_BIG + COL_PLAYER)) then
+            SpawnExplosion(m.x, m.y)
+            meteorsBig.remove(m)
+            PlayerHit()
+            return
+        end
+    end
+
+    // Small meteors vs player
+    for (var i = meteorsSmall.size() - 1; i >= 0; i--)
+        var m = meteorsSmall[i]
+        if (abs(m.x - playerSpr.x) < (COL_METEOR_SMALL + COL_PLAYER) and abs(m.y - playerSpr.y) < (COL_METEOR_SMALL + COL_PLAYER)) then
+            SpawnExplosion(m.x, m.y)
+            meteorsSmall.remove(m)
+            PlayerHit()
+            return
+        end
+    end
+end
+
+// ======================================================
+// Increase difficulty with score
+// ======================================================
+func UpdateDifficulty()
+    var newLevel = PlayerScore / 500
+    if (newLevel > diffLevel) then
+        diffLevel = newLevel
+        println(">>> Difficulty increased! Level: ", diffLevel)
+
+        // Reduce spawn intervals (minimum 800ms enemies, 1500ms meteors)
+        if (enemySpawnInterval > 800) then
+            enemySpawnInterval -= 200
+        end
+        if (meteorSpawnInterval > 1500) then
+            meteorSpawnInterval -= 250
+        end
+    end
+end
+
+// ======================================================
+// Draw the complete game
+// ======================================================
+func DrawGame()
+    // Star background
+    DrawStars()
+
+    // Background planet (slow parallax, drawn behind everything)
+    UpdateAndDrawPlanet()
+
+    // Player (blink if invulnerable)
+    if (playerInvulnerable > 0) then
+        if (playerInvulnerable mod 4 < 2) then
+            draw.sprite(playerSpr)
+        end
+    else
+        draw.sprite(playerSpr)
+    end
+
+    // Player shots
+    foreach (var s in playerShots)
+        draw.sprite(s)
+    end
+
+    // Enemy shots
+    foreach (var s in enemyShots)
+        draw.sprite(s)
+    end
+
+    // Enemies
+    foreach (var e in enemies)
+        draw.sprite(e)
+    end
+
+    // Big meteors
+    foreach (var m in meteorsBig)
+        draw.sprite(m)
+    end
+
+    // Small meteors
+    foreach (var m in meteorsSmall)
+        draw.sprite(m)
+    end
+
+    // Explosions
+    foreach (var exp in explosions)
+        draw.sprite(exp.sprite)
+    end
+
+    // HUD - Score and lives
+    draw.text(5, 3, "SCR:" + PlayerScore.toString(), 0xFFFFFF)
+    draw.text(VIEW_W - 60, 3, "HI:" + HiScore.toString(), 0xFFFF00)
+
+    // Lives indicator
+    draw.text(5, VIEW_H - 12, "LIVES:" + PlayerLives.toString(), 0x00FF00)
+
+    // FPS (debug only)
+    // draw.text(VIEW_W - 50, VIEW_H - 12, "FPS:" + fpsDisplay.toString(), 0x808080)
+
+    // Game Over
+    if (gameOver) then
+        draw.color = 0xFF0000
+        draw.text(VIEW_W / 2 - 36, VIEW_H / 2 - 10, "GAME OVER", 0xFF0000)
+        draw.text(VIEW_W / 2 - 42, VIEW_H / 2 + 5, "SCORE:" + PlayerScore.toString(), 0xFFFFFF)
+    end
+
+    Display.update()
+end
+
+// ======================================================
+// Reset game
+// ======================================================
+func ResetGame()
+    if (PlayerScore > HiScore) then
+        HiScore = PlayerScore
+    end
+
+    PlayerScore = 0
+    PlayerLives = 3
+    gameOver = false
+    playerInvulnerable = 0
+    diffLevel = 0
+    enemySpawnInterval = ENEMY_SPAWN_MS
+    meteorSpawnInterval = METEOR_SPAWN_MS
+
+    enemies = []
+    meteorsBig = []
+    meteorsSmall = []
+    playerShots = []
+    enemyShots = []
+    explosions = []
+
+    playerSpr.x = 30
+    playerSpr.y = VIEW_H / 2
+
+    // Reset planet off screen
+    planetX = VIEW_W + random(10, 40)
+    planetAccum = 0.0
+
+    var t = clock()
+    lastEnemySpawn = t
+    lastMeteorSpawn = t
+    lastPlayerShot = t
+end
+
+// ===================================================================================================================
+//                                      MAIN
+// ===================================================================================================================
+println("================================")
+println("          XNOM Demo")
+if (platform() == HW_ESP32) then
+    println("   Platform: ESP32")
+elsif (platform() == HW_WIN32) then
+    println("   Platform: WIN32")
+end
+println("================================")
+
+InitScreen()
+InitInput()
+InitStars()
+
+var current_time = clock()
+lastEnemySpawn = current_time
+lastMeteorSpawn = current_time
+lastPlayerShot = current_time
+lastFpsTime = current_time
+
+println(">>> Game started! Mem: ", memUse(), "  Free: ", memFree())
+
+// Main loop
+while (gameRunning)
+    current_time = clock()
+
+    if (not gameOver) then
+        // Update game logic
+        UpdatePlayer(current_time)
+        UpdatePlayerShots()
+        UpdateEnemyShots()
+        UpdateEnemies()
+        UpdateMeteors()
+        UpdateSpawners(current_time)
+        CheckCollisions()
+        UpdateExplosions()
+        UpdateDifficulty()
+    else
+        // Game Over: wait and reset
+        DrawGame()
+        pause(3000)
+        ResetGame()
+    end
+
+    // Draw
+    DrawGame()
+
+    // FPS calculation
+    frameCount++
+    if (current_time - lastFpsTime >= 1000) then
+        fpsDisplay = frameCount
+        frameCount = 0
+        lastFpsTime = current_time
+        println("FPS: ", fpsDisplay, " | Enemies: ", enemies.size(), " | Score: ", PlayerScore, " | Mem use: ", memUse()," | Mem free: ", memFree())
+    end
+
+    // Framerate control
+    if (platform() == HW_WIN32) then
+        pause(32)
+    end
+end
+
+println("================================")
+println("  Final score: ", PlayerScore)
+println("  Hi-Score: ", HiScore)
+println("  Memory used: ", memUse())
+println("  Memory free: ", memFree())
+println("================================")
+Display.close()
+println("Finished successfully")
+
+
