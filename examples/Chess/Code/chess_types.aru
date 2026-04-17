@@ -1,0 +1,94 @@
+/********************************************************
+ * Chess Game - Types and Constants
+ ********************************************************/
+
+// Piece constants
+const NINGUNA = 0
+const PEON = 10
+const ALFIL = 11
+const CABALLO = 12
+const TORRE = 13
+const DAMA = 14
+const REY = 15
+
+// Color constants
+const BLANCO = 1
+const NEGRO = 2
+const NINGUNO = 0
+
+// Visual piece lookup
+const piezas_dict = {
+    10: "P",  // Pawn
+    11: "A",  // Bishop
+    12: "C",  // Knight
+    13: "T",  // Rook
+    14: "D",  // Queen
+    15: "R",  // King
+    0: " "    // Empty cell
+}
+
+// Board cell
+class TCasilla
+    def init()
+        this.pieza = NINGUNA
+        this.color_pieza = NINGUNO
+        this.seleccionada = false
+    end
+
+    def clone()
+        var nueva = TCasilla()
+        nueva.pieza = this.pieza
+        nueva.color_pieza = this.color_pieza
+        nueva.seleccionada = this.seleccionada
+        return nueva
+    end
+end
+
+// Game state
+class TEstado
+    def init()
+        this.turno = BLANCO
+        this.movimientos = 0
+        this.jaque_blanco = false
+        this.jaque_negro = false
+        this.terminar = false
+        // Castling flags
+        this.rey_blanco_movido = false
+        this.rey_negro_movido = false
+        this.torre_a1_movida = false  // White queenside rook
+        this.torre_h1_movida = false  // White kingside rook
+        this.torre_a8_movida = false  // Black queenside rook
+        this.torre_h8_movida = false  // Black kingside rook
+        // En passant
+        this.peon_doble_x = -1  // Column of pawn that advanced 2
+        this.peon_doble_y = -1  // Row of pawn that advanced 2
+        // King position cache
+        this.rey_blanco_x = 4
+        this.rey_blanco_y = 7
+        this.rey_negro_x = 4
+        this.rey_negro_y = 0
+    end
+
+    def clone()
+        var nuevo = TEstado()
+        nuevo.turno = this.turno
+        nuevo.movimientos = this.movimientos
+        nuevo.jaque_blanco = this.jaque_blanco
+        nuevo.jaque_negro = this.jaque_negro
+        nuevo.terminar = this.terminar
+        nuevo.rey_blanco_movido = this.rey_blanco_movido
+        nuevo.rey_negro_movido = this.rey_negro_movido
+        nuevo.torre_a1_movida = this.torre_a1_movida
+        nuevo.torre_h1_movida = this.torre_h1_movida
+        nuevo.torre_a8_movida = this.torre_a8_movida
+        nuevo.torre_h8_movida = this.torre_h8_movida
+        nuevo.peon_doble_x = this.peon_doble_x
+        nuevo.peon_doble_y = this.peon_doble_y
+        nuevo.rey_blanco_x = this.rey_blanco_x
+        nuevo.rey_blanco_y = this.rey_blanco_y
+        nuevo.rey_negro_x = this.rey_negro_x
+        nuevo.rey_negro_y = this.rey_negro_y
+        return nuevo
+    end
+end
+

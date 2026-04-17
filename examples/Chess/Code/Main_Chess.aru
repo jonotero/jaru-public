@@ -1,0 +1,127 @@
+/*********************************************************
+ * Chess Game - Main Program
+ *********************************************************/
+use Display
+
+import "chess_types"
+import "chess_init"
+import "chess_moves"
+import "chess-check"
+import "chess_ai"
+import "chess_ui"
+
+const MAX_MOVIMIENTOS = 600
+
+randomize(clock()) //Random Seed
+
+// Initialize game
+iniciar_tablero()
+iniciar_pantalla()
+
+var start = clock()
+
+println("=== CHESS AI vs AI ===")
+println("Depth: ", PROFUNDIDAD_BUSQUEDA)
+println("")
+
+// Show initial position
+dibujar_partida("")
+
+// Main game loop
+while (!Estado.terminar and Estado.movimientos < MAX_MOVIMIENTOS)
+    mostrar_tablero()
+    println("")
+
+    // Show state
+    var color_texto = (Estado.turno == BLANCO) ? "WHITE" : "BLACK"
+    println("Turn: ", color_texto)
+    println("Move #", Estado.movimientos + 1)
+    println("Memory used: ", memUse());
+
+    // Check for check and update screen
+    var mensaje_ui = ""
+    if (esta_en_jaque(Estado.turno)) then
+        println("*** CHECK! ***")
+        mensaje_ui = "CHECK!"
+    else
+        jaque_activo = false
+    end
+
+    dibujar_partida(mensaje_ui)
+
+    // Measure time
+    var tiempo_inicio = clock()
+
+    // Generate AI move
+    var movimiento = generar_movimiento_ia(Estado.turno)
+
+    var tiempo_mov = (clock() - tiempo_inicio) / 1000
+
+    if (movimiento != nil) then
+        ultimo_mov_texto = movimiento_a_texto(movimiento)
+        println("Move: ", ultimo_mov_texto, " (", tiempo_mov, "s)")
+
+        // Detect capture and animate
+        var x0 = movimiento[0]
+        var y0 = movimiento[1]
+        var x1 = movimiento[2]
+        var y1 = movimiento[3]
+        var color_actual = Estado.turno
+        var es_captura = (Tablero[x1][y1].pieza != NINGUNA)
+
+        if (es_captura) then
+            animar_captura(x0, y0, x1, y1)
+        end
+
+        realizar_movimiento_seguro(x0, y0, x1, y1)
+
+        // Update move history
+        if (color_actual == BLANCO) then
+            penultimo_mov_b = ultimo_mov_b
+            ultimo_mov_b = movimiento
+        else
+            penultimo_mov_n = ultimo_mov_n
+            ultimo_mov_n = movimiento
+        end
+
+        if (es_captura) then
+            animar_destino(x1, y1)
+        end
+
+        // Animate check or checkmate
+        if (Estado.terminar and esta_en_jaque(Estado.turno)) then
+            animar_mate(Estado.turno)
+        elsif (!Estado.terminar and esta_en_jaque(Estado.turno)) then
+            animar_jaque(Estado.turno)
+        end
+    else
+        // No legal moves
+        mostrar_tablero()
+        if (esta_en_jaque(Estado.turno)) then
+            var ganador = (Estado.turno == BLANCO) ? "BLACK" : "WHITE"
+            println("*** CHECKMATE! ", ganador, " wins ***")
+            dibujar_partida("MATE!")
+        else
+            println("*** STALEMATE - DRAW ***")
+            dibujar_partida("DRAW")
+        end
+        Estado.terminar = true
+    end
+
+    println("")
+end
+
+// Show final result
+var tiempo_total = (clock() - start) / 1000
+mostrar_tablero()
+println("=== GAME OVER ===")
+println("Total moves: ", Estado.movimientos)
+println("Total time: ", tiempo_total, " seconds")
+
+if (Estado.movimientos >= MAX_MOVIMIENTOS) then
+    println("Move limit reached - DRAW")
+    dibujar_partida("DRAW")
+else
+    dibujar_partida("END")
+end
+

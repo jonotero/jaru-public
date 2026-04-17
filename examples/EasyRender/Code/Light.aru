@@ -1,0 +1,33 @@
+/////////////////////////////////////////////////////////////////////////////////////////////////
+// Light.aru
+// Version 1.2
+// ---------------------------------------------------------------------------------------------
+// Conversion of the C++ code from the Easy Render ray tracing engine.
+//
+// Easy Render (c) Jon Otero Fernandez 1996.
+// Jon Otero Fernandez (c) November 2022
+/////////////////////////////////////////////////////////////////////////////////////////////////
+
+import "Ray"
+
+class Light: Ray
+    def init()
+        this.kind=0
+        this.color=Vector();
+        this.power=0;
+        this.cosMax=0;
+        this.cosMin=0;
+    end;
+
+    def init(vFrom, vTo, color, power)
+        super.init(vFrom, vTo);
+        this.kind=0;
+        this.color=color;
+        this.power=power;
+    end;
+
+    // Computes the intersection of the ray with the light source.
+    // Returns -1 if there is no intersection.
+
+end
+

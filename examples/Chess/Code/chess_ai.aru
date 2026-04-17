@@ -1,0 +1,1036 @@
+/*************************************************************************
+ * Chess Game - AI (Minimax with alpha-beta pruning)
+ *************************************************************************/
+use Math
+
+import "chess_types"
+import "chess_moves"
+import "chess-check"
+
+
+// Piece values
+const VALOR_PEON = 100
+const VALOR_CABALLO = 320
+const VALOR_ALFIL = 330
+const VALOR_TORRE = 500
+const VALOR_DAMA = 900
+const VALOR_REY = 20000
+
+// Search depth (2-3 for ESP32)
+const PROFUNDIDAD_BUSQUEDA = 3
+
+// Special values
+const INFINITO = 100000
+const MATE = 50000
+
+// Move history for repetition detection
+var ultimo_mov_b = nil
+var penultimo_mov_b = nil
+var ultimo_mov_n = nil
+var penultimo_mov_n = nil
+
+// Positional tables (shared to save RAM)
+// Pawns - control center, advance
+const TABLA_PEON = [
+    [0,  0,  0,  0,  0,  0,  0,  0],
+    [50, 50, 50, 50, 50, 50, 50, 50],
+    [10, 10, 20, 30, 30, 20, 10, 10],
+    [5,  5, 10, 25, 25, 10,  5,  5],
+    [0,  0,  0, 25, 25,  0,  0,  0],
+    [5, -5,-10,  0,  0,-10, -5,  5],
+    [5, 10, 10,-20,-20, 10, 10,  5],
+    [0,  0,  0,  0,  0,  0,  0,  0]
+]
+
+// Knights - better in center
+const TABLA_CABALLO = [
+    [-50,-40,-30,-30,-30,-30,-40,-50],
+    [-40,-20,  0,  0,  0,  0,-20,-40],
+    [-30,  0, 10, 15, 15, 10,  0,-30],
+    [-30,  5, 15, 20, 20, 15,  5,-30],
+    [-30,  0, 15, 20, 20, 15,  0,-30],
+    [-30,  5, 10, 15, 15, 10,  5,-30],
+    [-40,-20,  0,  5,  5,  0,-20,-40],
+    [-50,-40,-30,-30,-30,-30,-40,-50]
+]
+
+// Bishops - long diagonals, avoid edges
+const TABLA_ALFIL = [
+    [-20,-10,-10,-10,-10,-10,-10,-20],
+    [-10,  0,  0,  0,  0,  0,  0,-10],
+    [-10,  0,  5, 10, 10,  5,  0,-10],
+    [-10,  5,  5, 10, 10,  5,  5,-10],
+    [-10,  0, 10, 10, 10, 10,  0,-10],
+    [-10, 10, 10, 10, 10, 10, 10,-10],
+    [-10,  5,  0,  0,  0,  0,  5,-10],
+    [-20,-10,-10,-10,-10,-10,-10,-20]
+]
+
+// Rooks - open files, seventh rank
+const TABLA_TORRE = [
+    [0,  0,  0,  0,  0,  0,  0,  0],
+    [5, 10, 10, 10, 10, 10, 10,  5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [-5,  0,  0,  0,  0,  0,  0, -5],
+    [0,  0,  0,  5,  5,  0,  0,  0]
+]
+
+// Queen - avoid early exposure
+const TABLA_DAMA = [
+    [-20,-10,-10, -5, -5,-10,-10,-20],
+    [-10,  0,  0,  0,  0,  0,  0,-10],
+    [-10,  0,  5,  5,  5,  5,  0,-10],
+    [-5,  0,  5,  5,  5,  5,  0, -5],
+    [0,  0,  5,  5,  5,  5,  0, -5],
+    [-10,  5,  5,  5,  5,  5,  0,-10],
+    [-10,  0,  5,  0,  0,  0,  0,-10],
+    [-20,-10,-10, -5, -5,-10,-10,-20]
+]
+
+// King - safety (opening/middlegame)
+const TABLA_REY_MEDIO = [
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-30,-40,-40,-50,-50,-40,-40,-30],
+    [-20,-30,-30,-40,-40,-30,-30,-20],
+    [-10,-20,-20,-20,-20,-20,-20,-10],
+    [20, 20,  0,  0,  0,  0, 20, 20],
+    [20, 45, 10,-15,-15, 10, 50, 20]
+]
+
+// King - endgame (active)
+const TABLA_REY_FINAL = [
+    [-50,-40,-30,-20,-20,-30,-40,-50],
+    [-30,-20,-10,  0,  0,-10,-20,-30],
+    [-30,-10, 20, 30, 30, 20,-10,-30],
+    [-30,-10, 30, 40, 40, 30,-10,-30],
+    [-30,-10, 30, 40, 40, 30,-10,-30],
+    [-30,-10, 20, 30, 30, 20,-10,-30],
+    [-30,-30,  0,  0,  0,  0,-30,-30],
+    [-50,-30,-30,-30,-30,-30,-30,-50]
+]
+
+//=============================================================================
+// BOARD EVALUATION
+//=============================================================================
+
+func evaluar_tablero()
+    var valor_blanco = 0
+    var valor_negro = 0
+    var material_total = 0
+    var rey_bx = 0
+    var rey_by = 0
+    var rey_nx = 0
+    var rey_ny = 0
+
+    // Single pass: material + positional eval
+    for (var x = 0; x < 8; x++)
+        for (var y = 0; y < 8; y++)
+            var pieza = Tablero[x][y].pieza
+            if (pieza == NINGUNA) then
+                continue
+            end
+
+            var color = Tablero[x][y].color_pieza
+
+            // Remember king position for later eval
+            if (pieza == REY) then
+                if (color == BLANCO) then
+                    rey_bx = x
+                    rey_by = y
+                else
+                    rey_nx = x
+                    rey_ny = y
+                end
+                continue
+            end
+
+            var valor_pieza = 0
+            var bonus = 0
+            var fila = (color == BLANCO) ? y : (7 - y)
+
+            switch (pieza)
+                case PEON:
+                    valor_pieza = VALOR_PEON
+                    bonus = TABLA_PEON[fila][x]
+
+                case CABALLO:
+                    valor_pieza = VALOR_CABALLO
+                    bonus = TABLA_CABALLO[fila][x]
+                    material_total += VALOR_CABALLO
+
+                case ALFIL:
+                    valor_pieza = VALOR_ALFIL
+                    bonus = TABLA_ALFIL[fila][x]
+                    material_total += VALOR_ALFIL
+
+                case TORRE:
+                    valor_pieza = VALOR_TORRE
+                    bonus = TABLA_TORRE[fila][x]
+                    material_total += VALOR_TORRE
+
+                case DAMA:
+                    valor_pieza = VALOR_DAMA
+                    bonus = TABLA_DAMA[fila][x]
+                    material_total += VALOR_DAMA
+            end
+
+            if (color == BLANCO) then
+                valor_blanco += valor_pieza + bonus
+            else
+                valor_negro += valor_pieza + bonus
+            end
+        end
+    end
+
+    // Evaluate kings (after loop to know game phase)
+    var es_final = (material_total < 1500)
+    var fila_rb = rey_by
+    var fila_rn = 7 - rey_ny
+    if (es_final) then
+        valor_blanco += VALOR_REY + TABLA_REY_FINAL[fila_rb][rey_bx]
+        valor_negro += VALOR_REY + TABLA_REY_FINAL[fila_rn][rey_nx]
+    else
+        valor_blanco += VALOR_REY + TABLA_REY_MEDIO[fila_rb][rey_bx]
+        valor_negro += VALOR_REY + TABLA_REY_MEDIO[fila_rn][rey_nx]
+    end
+
+    // Development bonus (minor pieces off starting square)
+    if (!es_final) then
+        // White knights off b1 and g1
+        if (Tablero[1][7].pieza != CABALLO or Tablero[1][7].color_pieza != BLANCO) then
+            valor_blanco += 25
+        end
+        if (Tablero[6][7].pieza != CABALLO or Tablero[6][7].color_pieza != BLANCO) then
+            valor_blanco += 25
+        end
+        // White bishops off c1 and f1
+        if (Tablero[2][7].pieza != ALFIL or Tablero[2][7].color_pieza != BLANCO) then
+            valor_blanco += 25
+        end
+        if (Tablero[5][7].pieza != ALFIL or Tablero[5][7].color_pieza != BLANCO) then
+            valor_blanco += 25
+        end
+        // Black knights off b8 and g8
+        if (Tablero[1][0].pieza != CABALLO or Tablero[1][0].color_pieza != NEGRO) then
+            valor_negro += 25
+        end
+        if (Tablero[6][0].pieza != CABALLO or Tablero[6][0].color_pieza != NEGRO) then
+            valor_negro += 25
+        end
+        // Black bishops off c8 and f8
+        if (Tablero[2][0].pieza != ALFIL or Tablero[2][0].color_pieza != NEGRO) then
+            valor_negro += 25
+        end
+        if (Tablero[5][0].pieza != ALFIL or Tablero[5][0].color_pieza != NEGRO) then
+            valor_negro += 25
+        end
+
+        // Bonus for completed castling
+        if (Estado.rey_blanco_movido and (rey_bx == 6 or rey_bx == 2) and rey_by == 7) then
+            valor_blanco += 30
+        end
+        if (Estado.rey_negro_movido and (rey_nx == 6 or rey_nx == 2) and rey_ny == 0) then
+            valor_negro += 30
+        end
+    end
+
+    return valor_blanco - valor_negro
+end
+
+//=============================================================================
+// OPTIMIZED MOVE GENERATION
+//=============================================================================
+
+func generar_movimientos(color)
+    var movimientos = []
+
+    for (var x = 0; x < 8; x++)
+        for (var y = 0; y < 8; y++)
+            if (Tablero[x][y].color_pieza != color) then
+                continue
+            end
+
+            var pieza = Tablero[x][y].pieza
+
+            // Generate moves by piece type
+            if (pieza == PEON) then
+                generar_movs_peon(x, y, color, movimientos)
+            elsif (pieza == CABALLO) then
+                generar_movs_caballo(x, y, color, movimientos)
+            elsif (pieza == ALFIL) then
+                generar_movs_deslizante(x, y, color, movimientos, true, false)
+            elsif (pieza == TORRE) then
+                generar_movs_deslizante(x, y, color, movimientos, false, true)
+            elsif (pieza == DAMA) then
+                generar_movs_deslizante(x, y, color, movimientos, true, true)
+            elsif (pieza == REY) then
+                generar_movs_rey(x, y, color, movimientos)
+            end
+        end
+    end
+
+    return movimientos
+end
+
+func generar_movs_peon(x, y, color, movs)
+    var dir = (color == BLANCO) ? -1 : 1
+    var fila_inicial = (color == BLANCO) ? 6 : 1
+
+    // Avance simple
+    var ny = y + dir
+    if (ny >= 0 and ny < 8 and Tablero[x][ny].pieza == NINGUNA) then
+        if (!movimiento_deja_en_jaque(x, y, x, ny)) then
+            movs.append([x, y, x, ny])
+        end
+        // Avance doble
+        if (y == fila_inicial) then
+            var ny2 = y + 2 * dir
+            if (Tablero[x][ny2].pieza == NINGUNA) then
+                if (!movimiento_deja_en_jaque(x, y, x, ny2)) then
+                    movs.append([x, y, x, ny2])
+                end
+            end
+        end
+    end
+
+    // Capturas
+    for (var dx = -1; dx <= 1; dx += 2)
+        var nx = x + dx
+        if (nx >= 0 and nx < 8 and ny >= 0 and ny < 8) then
+            // Captura normal
+            if (Tablero[nx][ny].pieza != NINGUNA and
+                Tablero[nx][ny].color_pieza != color) then
+                if (!movimiento_deja_en_jaque(x, y, nx, ny)) then
+                    movs.append([x, y, nx, ny])
+                end
+            end
+            // Captura al paso
+            if (Estado.peon_doble_x == nx and Estado.peon_doble_y == y) then
+                if (!movimiento_deja_en_jaque(x, y, nx, ny)) then
+                    movs.append([x, y, nx, ny])
+                end
+            end
+        end
+    end
+end
+
+func generar_movs_caballo(x, y, color, movs)
+    var saltos = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]
+
+    for (var i = 0; i < 8; i++)
+        var nx = x + saltos[i][0]
+        var ny = y + saltos[i][1]
+
+        if (nx >= 0 and nx < 8 and ny >= 0 and ny < 8) then
+            if (Tablero[nx][ny].color_pieza != color) then
+                if (!movimiento_deja_en_jaque(x, y, nx, ny)) then
+                    movs.append([x, y, nx, ny])
+                end
+            end
+        end
+    end
+end
+
+func generar_movs_deslizante(x, y, color, movs, diagonal, recto)
+    var dirs = []
+
+    if (diagonal) then
+        dirs.append([-1, -1])
+        dirs.append([-1, 1])
+        dirs.append([1, -1])
+        dirs.append([1, 1])
+    end
+    if (recto) then
+        dirs.append([0, -1])
+        dirs.append([0, 1])
+        dirs.append([-1, 0])
+        dirs.append([1, 0])
+    end
+
+    for (var d = 0; d < dirs.size(); d++)
+        var dx = dirs[d][0]
+        var dy = dirs[d][1]
+        var nx = x + dx
+        var ny = y + dy
+
+        while (nx >= 0 and nx < 8 and ny >= 0 and ny < 8)
+            if (Tablero[nx][ny].color_pieza == color) then
+                break
+            end
+
+            if (!movimiento_deja_en_jaque(x, y, nx, ny)) then
+                movs.append([x, y, nx, ny])
+            end
+
+            if (Tablero[nx][ny].pieza != NINGUNA) then
+                break  // Captura, no seguir
+            end
+
+            nx += dx
+            ny += dy
+        end
+    end
+end
+
+func generar_movs_rey(x, y, color, movs)
+    // Movimientos normales
+    for (var dx = -1; dx <= 1; dx++)
+        for (var dy = -1; dy <= 1; dy++)
+            if (dx == 0 and dy == 0) then
+                continue
+            end
+
+            var nx = x + dx
+            var ny = y + dy
+
+            if (nx >= 0 and nx < 8 and ny >= 0 and ny < 8) then
+                if (Tablero[nx][ny].color_pieza != color) then
+                    if (!movimiento_deja_en_jaque(x, y, nx, ny)) then
+                        movs.append([x, y, nx, ny])
+                    end
+                end
+            end
+        end
+    end
+
+    // Enroque
+    if (validar_enroque(x, y, x + 2, y, color)) then
+        movs.append([x, y, x + 2, y])
+    end
+    if (validar_enroque(x, y, x - 2, y, color)) then
+        movs.append([x, y, x - 2, y])
+    end
+end
+
+//=============================================================================
+// MOVE ORDERING (improves alpha-beta pruning)
+//=============================================================================
+
+func obtener_valor_pieza(pieza)
+    switch (pieza)
+        case PEON: return VALOR_PEON
+        case CABALLO: return VALOR_CABALLO
+        case ALFIL: return VALOR_ALFIL
+        case TORRE: return VALOR_TORRE
+        case DAMA: return VALOR_DAMA
+        case REY: return VALOR_REY
+        default: return 0
+    end
+end
+
+func ordenar_capturas_mvvlva(capturas)
+    // MVV: Most Valuable Victim first
+    // 5 passes by victim type (queen > rook > bishop > knight > pawn)
+    // O(N) with one list instead of O(N^2) with 55+ temp lists
+    var resultado = []
+    for (var i = 0; i < capturas.size(); i++)
+        if (Tablero[capturas[i][2]][capturas[i][3]].pieza == DAMA) then
+            resultado.append(capturas[i])
+        end
+    end
+    for (var i = 0; i < capturas.size(); i++)
+        if (Tablero[capturas[i][2]][capturas[i][3]].pieza == TORRE) then
+            resultado.append(capturas[i])
+        end
+    end
+    for (var i = 0; i < capturas.size(); i++)
+        if (Tablero[capturas[i][2]][capturas[i][3]].pieza == ALFIL) then
+            resultado.append(capturas[i])
+        end
+    end
+    for (var i = 0; i < capturas.size(); i++)
+        if (Tablero[capturas[i][2]][capturas[i][3]].pieza == CABALLO) then
+            resultado.append(capturas[i])
+        end
+    end
+    for (var i = 0; i < capturas.size(); i++)
+        if (Tablero[capturas[i][2]][capturas[i][3]].pieza == PEON) then
+            resultado.append(capturas[i])
+        end
+    end
+    return resultado
+end
+
+func ordenar_movimientos(movimientos)
+    var capturas = []
+    var otros = []
+
+    for (var i = 0; i < movimientos.size(); i++)
+        var mov = movimientos[i]
+        if (Tablero[mov[2]][mov[3]].pieza != NINGUNA) then
+            capturas.append(mov)
+        else
+            otros.append(mov)
+        end
+    end
+
+    // Sort captures by MVV-LVA
+    capturas = ordenar_capturas_mvvlva(capturas)
+
+    var resultado = []
+    for (var i = 0; i < capturas.size(); i++)
+        resultado.append(capturas[i])
+    end
+    for (var i = 0; i < otros.size(); i++)
+        resultado.append(otros[i])
+    end
+
+    return resultado
+end
+
+func generar_capturas_peon(x, y, color, capturas)
+    var dir = (color == BLANCO) ? -1 : 1
+    var ny = y + dir
+    if (ny < 0 or ny >= 8) then
+        return
+    end
+    for (var dx = -1; dx <= 1; dx += 2)
+        var nx = x + dx
+        if (nx >= 0 and nx < 8) then
+            if (Tablero[nx][ny].pieza != NINGUNA and Tablero[nx][ny].color_pieza != color) then
+                if (!movimiento_deja_en_jaque(x, y, nx, ny)) then
+                    capturas.append([x, y, nx, ny])
+                end
+            end
+            if (Estado.peon_doble_x == nx and Estado.peon_doble_y == y) then
+                if (!movimiento_deja_en_jaque(x, y, nx, ny)) then
+                    capturas.append([x, y, nx, ny])
+                end
+            end
+        end
+    end
+end
+
+func generar_capturas_caballo(x, y, color, capturas)
+    var saltos = [[-2,-1],[-2,1],[-1,-2],[-1,2],[1,-2],[1,2],[2,-1],[2,1]]
+    for (var i = 0; i < 8; i++)
+        var nx = x + saltos[i][0]
+        var ny = y + saltos[i][1]
+        if (nx >= 0 and nx < 8 and ny >= 0 and ny < 8) then
+            if (Tablero[nx][ny].pieza != NINGUNA and Tablero[nx][ny].color_pieza != color) then
+                if (!movimiento_deja_en_jaque(x, y, nx, ny)) then
+                    capturas.append([x, y, nx, ny])
+                end
+            end
+        end
+    end
+end
+
+func generar_capturas_deslizante(x, y, color, capturas, diagonal, recto)
+    var dirs = []
+    if (diagonal) then
+        dirs.append([-1, -1])
+        dirs.append([-1, 1])
+        dirs.append([1, -1])
+        dirs.append([1, 1])
+    end
+    if (recto) then
+        dirs.append([0, -1])
+        dirs.append([0, 1])
+        dirs.append([-1, 0])
+        dirs.append([1, 0])
+    end
+    for (var d = 0; d < dirs.size(); d++)
+        var dx = dirs[d][0]
+        var dy = dirs[d][1]
+        var nx = x + dx
+        var ny = y + dy
+        while (nx >= 0 and nx < 8 and ny >= 0 and ny < 8)
+            if (Tablero[nx][ny].color_pieza == color) then
+                break
+            end
+            if (Tablero[nx][ny].pieza != NINGUNA) then
+                if (!movimiento_deja_en_jaque(x, y, nx, ny)) then
+                    capturas.append([x, y, nx, ny])
+                end
+                break
+            end
+            nx += dx
+            ny += dy
+        end
+    end
+end
+
+func generar_capturas_rey(x, y, color, capturas)
+    for (var dx = -1; dx <= 1; dx++)
+        for (var dy = -1; dy <= 1; dy++)
+            if (dx == 0 and dy == 0) then
+                continue
+            end
+            var nx = x + dx
+            var ny = y + dy
+            if (nx >= 0 and nx < 8 and ny >= 0 and ny < 8) then
+                if (Tablero[nx][ny].pieza != NINGUNA and Tablero[nx][ny].color_pieza != color) then
+                    if (!movimiento_deja_en_jaque(x, y, nx, ny)) then
+                        capturas.append([x, y, nx, ny])
+                    end
+                end
+            end
+        end
+    end
+end
+
+func generar_capturas(color)
+    var capturas = []
+    for (var x = 0; x < 8; x++)
+        for (var y = 0; y < 8; y++)
+            if (Tablero[x][y].color_pieza != color) then
+                continue
+            end
+            var pieza = Tablero[x][y].pieza
+            if (pieza == PEON) then
+                generar_capturas_peon(x, y, color, capturas)
+            elsif (pieza == CABALLO) then
+                generar_capturas_caballo(x, y, color, capturas)
+            elsif (pieza == ALFIL) then
+                generar_capturas_deslizante(x, y, color, capturas, true, false)
+            elsif (pieza == TORRE) then
+                generar_capturas_deslizante(x, y, color, capturas, false, true)
+            elsif (pieza == DAMA) then
+                generar_capturas_deslizante(x, y, color, capturas, true, true)
+            elsif (pieza == REY) then
+                generar_capturas_rey(x, y, color, capturas)
+            end
+        end
+    end
+    return capturas
+end
+
+//=============================================================================
+// QUIESCENCE SEARCH - Eliminates horizon effect
+//=============================================================================
+
+const MAX_QUIESCENCE = 4
+
+func quiescence(alfa, beta, color, profundidad_q)
+    // Stand-pat: static eval without capturing
+    var eval = evaluar_tablero()
+    var stand_pat = (color == BLANCO) ? eval : -eval
+
+    if (profundidad_q >= MAX_QUIESCENCE) then
+        return stand_pat
+    end
+
+    if (stand_pat >= beta) then
+        return beta
+    end
+    if (stand_pat > alfa) then
+        alfa = stand_pat
+    end
+
+    var capturas = generar_capturas(color)
+    capturas = ordenar_capturas_mvvlva(capturas)
+
+    var oponente = (color == BLANCO) ? NEGRO : BLANCO
+
+    for (var i = 0; i < capturas.size(); i++)
+        var mov = capturas[i]
+        var x0 = mov[0]
+        var y0 = mov[1]
+        var x1 = mov[2]
+        var y1 = mov[3]
+
+        // Delta pruning: skip captures that can't improve alpha
+        var valor_victima = obtener_valor_pieza(Tablero[x1][y1].pieza)
+        if (stand_pat + valor_victima + 200 < alfa) then
+            continue
+        end
+
+        // Save state
+        var pieza_orig = Tablero[x0][y0].pieza
+        var color_orig = Tablero[x0][y0].color_pieza
+        var pieza_dest = Tablero[x1][y1].pieza
+        var color_dest = Tablero[x1][y1].color_pieza
+
+        var pieza_paso = NINGUNA
+        var color_paso = NINGUNO
+        var es_paso = false
+
+        var peon_x_ant = Estado.peon_doble_x
+        var peon_y_ant = Estado.peon_doble_y
+
+        // En passant
+        if (pieza_orig == PEON and x0 != x1 and pieza_dest == NINGUNA) then
+            es_paso = true
+            pieza_paso = Tablero[x1][y0].pieza
+            color_paso = Tablero[x1][y0].color_pieza
+            Tablero[x1][y0].pieza = NINGUNA
+            Tablero[x1][y0].color_pieza = NINGUNO
+        end
+
+        Estado.peon_doble_x = -1
+        Estado.peon_doble_y = -1
+
+        // Execute capture
+        Tablero[x1][y1].pieza = pieza_orig
+        Tablero[x1][y1].color_pieza = color_orig
+        Tablero[x0][y0].pieza = NINGUNA
+        Tablero[x0][y0].color_pieza = NINGUNO
+
+        // Promotion
+        if (pieza_orig == PEON) then
+            if ((color_orig == BLANCO and y1 == 0) or (color_orig == NEGRO and y1 == 7)) then
+                Tablero[x1][y1].pieza = DAMA
+            end
+        end
+
+        var valor = -quiescence(-beta, -alfa, oponente, profundidad_q + 1)
+
+        // Restore
+        Tablero[x0][y0].pieza = pieza_orig
+        Tablero[x0][y0].color_pieza = color_orig
+        Tablero[x1][y1].pieza = pieza_dest
+        Tablero[x1][y1].color_pieza = color_dest
+
+        if (es_paso) then
+            Tablero[x1][y0].pieza = pieza_paso
+            Tablero[x1][y0].color_pieza = color_paso
+        end
+
+        Estado.peon_doble_x = peon_x_ant
+        Estado.peon_doble_y = peon_y_ant
+
+        if (valor >= beta) then
+            return beta
+        end
+        if (valor > alfa) then
+            alfa = valor
+        end
+    end
+
+    return alfa
+end
+
+//=============================================================================
+// MINIMAX WITH ALPHA-BETA PRUNING (NEGAMAX)
+//=============================================================================
+
+func negamax(profundidad, alfa, beta, color)
+    // Base case: quiescence search
+    if (profundidad == 0) then
+        return quiescence(alfa, beta, color, 0)
+    end
+
+    var movimientos = generar_movimientos(color)
+
+    // No legal moves
+    if (movimientos.size() == 0) then
+        if (esta_en_jaque(color)) then
+            return -MATE + (PROFUNDIDAD_BUSQUEDA - profundidad)  // Mate
+        end
+        return 0  // Stalemate
+    end
+
+    // Order moves for better pruning
+    movimientos = ordenar_movimientos(movimientos)
+
+    var mejor_valor = -INFINITO
+    var oponente = (color == BLANCO) ? NEGRO : BLANCO
+
+    for (var i = 0; i < movimientos.size(); i++)
+        var mov = movimientos[i]
+        var x0 = mov[0]
+        var y0 = mov[1]
+        var x1 = mov[2]
+        var y1 = mov[3]
+
+        // Save minimal state
+        var pieza_orig = Tablero[x0][y0].pieza
+        var color_orig = Tablero[x0][y0].color_pieza
+        var pieza_dest = Tablero[x1][y1].pieza
+        var color_dest = Tablero[x1][y1].color_pieza
+
+        // En passant variables
+        var pieza_paso = NINGUNA
+        var color_paso = NINGUNO
+        var es_paso = false
+
+        // Save state for restoration
+        var peon_x_ant = Estado.peon_doble_x
+        var peon_y_ant = Estado.peon_doble_y
+        var rey_b_ant = Estado.rey_blanco_movido
+        var rey_n_ant = Estado.rey_negro_movido
+        var torre_a1_ant = Estado.torre_a1_movida
+        var torre_h1_ant = Estado.torre_h1_movida
+        var torre_a8_ant = Estado.torre_a8_movida
+        var torre_h8_ant = Estado.torre_h8_movida
+
+        // Castling variables during search
+        var es_enroque = false
+        var torre_enroque_x0 = -1
+        var torre_enroque_x1 = -1
+
+        // Detect and execute en passant
+        if (pieza_orig == PEON and x0 != x1 and pieza_dest == NINGUNA) then
+            es_paso = true
+            pieza_paso = Tablero[x1][y0].pieza
+            color_paso = Tablero[x1][y0].color_pieza
+            Tablero[x1][y0].pieza = NINGUNA
+            Tablero[x1][y0].color_pieza = NINGUNO
+        end
+
+        // Update en passant for next turn
+        if (pieza_orig == PEON and abs(y1 - y0) == 2) then
+            Estado.peon_doble_x = x1
+            Estado.peon_doble_y = y1
+        else
+            Estado.peon_doble_x = -1
+            Estado.peon_doble_y = -1
+        end
+
+        // Execute move
+        Tablero[x1][y1].pieza = pieza_orig
+        Tablero[x1][y1].color_pieza = color_orig
+        Tablero[x0][y0].pieza = NINGUNA
+        Tablero[x0][y0].color_pieza = NINGUNO
+
+        // Castling: move rook and update flags
+        if (pieza_orig == REY and abs(x1 - x0) == 2) then
+            es_enroque = true
+            if (x1 == 6) then
+                torre_enroque_x0 = 7
+                torre_enroque_x1 = 5
+            else
+                torre_enroque_x0 = 0
+                torre_enroque_x1 = 3
+            end
+            Tablero[torre_enroque_x1][y0].pieza = TORRE
+            Tablero[torre_enroque_x1][y0].color_pieza = color_orig
+            Tablero[torre_enroque_x0][y0].pieza = NINGUNA
+            Tablero[torre_enroque_x0][y0].color_pieza = NINGUNO
+        end
+
+        // Update castling flags
+        if (pieza_orig == REY) then
+            if (color_orig == BLANCO) then
+                Estado.rey_blanco_movido = true
+            else
+                Estado.rey_negro_movido = true
+            end
+        end
+        if (pieza_orig == TORRE) then
+            if (x0 == 0 and y0 == 7) then Estado.torre_a1_movida = true end
+            if (x0 == 7 and y0 == 7) then Estado.torre_h1_movida = true end
+            if (x0 == 0 and y0 == 0) then Estado.torre_a8_movida = true end
+            if (x0 == 7 and y0 == 0) then Estado.torre_h8_movida = true end
+        end
+
+        // Temporary promotion
+        var promocion = false
+        if (pieza_orig == PEON) then
+            if ((color_orig == BLANCO and y1 == 0) or (color_orig == NEGRO and y1 == 7)) then
+                Tablero[x1][y1].pieza = DAMA
+                promocion = true
+            end
+        end
+
+        // Recursion
+        var valor = -negamax(profundidad - 1, -beta, -alfa, oponente)
+
+        // Restore
+        Tablero[x0][y0].pieza = pieza_orig
+        Tablero[x0][y0].color_pieza = color_orig
+        Tablero[x1][y1].pieza = pieza_dest
+        Tablero[x1][y1].color_pieza = color_dest
+
+        if (es_paso) then
+            Tablero[x1][y0].pieza = pieza_paso
+            Tablero[x1][y0].color_pieza = color_paso
+        end
+
+        // Restore castling
+        if (es_enroque) then
+            Tablero[torre_enroque_x0][y0].pieza = TORRE
+            Tablero[torre_enroque_x0][y0].color_pieza = color_orig
+            Tablero[torre_enroque_x1][y0].pieza = NINGUNA
+            Tablero[torre_enroque_x1][y0].color_pieza = NINGUNO
+        end
+
+        Estado.peon_doble_x = peon_x_ant
+        Estado.peon_doble_y = peon_y_ant
+        Estado.rey_blanco_movido = rey_b_ant
+        Estado.rey_negro_movido = rey_n_ant
+        Estado.torre_a1_movida = torre_a1_ant
+        Estado.torre_h1_movida = torre_h1_ant
+        Estado.torre_a8_movida = torre_a8_ant
+        Estado.torre_h8_movida = torre_h8_ant
+
+        // Update best value
+        if (valor > mejor_valor) then
+            mejor_valor = valor
+        end
+
+        if (valor > alfa) then
+            alfa = valor
+        end
+
+        // Pruning
+        if (alfa >= beta) then
+            break
+        end
+    end
+
+    return mejor_valor
+end
+
+//=============================================================================
+// MAIN AI FUNCTION
+//=============================================================================
+
+func generar_movimiento_ia(color_ia)
+    var movimientos = generar_movimientos(color_ia)
+
+    if (movimientos.size() == 0) then
+        return nil
+    end
+
+    // Sort for better search
+    movimientos = ordenar_movimientos(movimientos)
+
+    var mejor_valor = -INFINITO
+    var mejor_movimiento = nil
+    var oponente = (color_ia == BLANCO) ? NEGRO : BLANCO
+
+    for (var i = 0; i < movimientos.size(); i++)
+        var mov = movimientos[i]
+        var x0 = mov[0]
+        var y0 = mov[1]
+        var x1 = mov[2]
+        var y1 = mov[3]
+
+        // Save state
+        var pieza_orig = Tablero[x0][y0].pieza
+        var color_orig = Tablero[x0][y0].color_pieza
+        var pieza_dest = Tablero[x1][y1].pieza
+        var color_dest = Tablero[x1][y1].color_pieza
+
+        var pieza_paso = NINGUNA
+        var color_paso = NINGUNO
+        var es_paso = false
+
+        var peon_x_ant = Estado.peon_doble_x
+        var peon_y_ant = Estado.peon_doble_y
+        var rey_b_ant = Estado.rey_blanco_movido
+        var rey_n_ant = Estado.rey_negro_movido
+        var torre_a1_ant = Estado.torre_a1_movida
+        var torre_h1_ant = Estado.torre_h1_movida
+        var torre_a8_ant = Estado.torre_a8_movida
+        var torre_h8_ant = Estado.torre_h8_movida
+
+        var es_enroque = false
+        var torre_enroque_x0 = -1
+        var torre_enroque_x1 = -1
+
+        // En passant
+        if (pieza_orig == PEON and x0 != x1 and pieza_dest == NINGUNA) then
+            es_paso = true
+            pieza_paso = Tablero[x1][y0].pieza
+            color_paso = Tablero[x1][y0].color_pieza
+            Tablero[x1][y0].pieza = NINGUNA
+            Tablero[x1][y0].color_pieza = NINGUNO
+        end
+
+        // Update en passant
+        if (pieza_orig == PEON and abs(y1 - y0) == 2) then
+            Estado.peon_doble_x = x1
+            Estado.peon_doble_y = y1
+        else
+            Estado.peon_doble_x = -1
+            Estado.peon_doble_y = -1
+        end
+
+        // Execute move
+        Tablero[x1][y1].pieza = pieza_orig
+        Tablero[x1][y1].color_pieza = color_orig
+        Tablero[x0][y0].pieza = NINGUNA
+        Tablero[x0][y0].color_pieza = NINGUNO
+
+        // Castling: move rook and update flags
+        if (pieza_orig == REY and abs(x1 - x0) == 2) then
+            es_enroque = true
+            if (x1 == 6) then
+                torre_enroque_x0 = 7
+                torre_enroque_x1 = 5
+            else
+                torre_enroque_x0 = 0
+                torre_enroque_x1 = 3
+            end
+            Tablero[torre_enroque_x1][y0].pieza = TORRE
+            Tablero[torre_enroque_x1][y0].color_pieza = color_orig
+            Tablero[torre_enroque_x0][y0].pieza = NINGUNA
+            Tablero[torre_enroque_x0][y0].color_pieza = NINGUNO
+        end
+
+        if (pieza_orig == REY) then
+            if (color_orig == BLANCO) then
+                Estado.rey_blanco_movido = true
+            else
+                Estado.rey_negro_movido = true
+            end
+        end
+        if (pieza_orig == TORRE) then
+            if (x0 == 0 and y0 == 7) then Estado.torre_a1_movida = true end
+            if (x0 == 7 and y0 == 7) then Estado.torre_h1_movida = true end
+            if (x0 == 0 and y0 == 0) then Estado.torre_a8_movida = true end
+            if (x0 == 7 and y0 == 0) then Estado.torre_h8_movida = true end
+        end
+
+        // Promotion
+        if (pieza_orig == PEON) then
+            if ((color_orig == BLANCO and y1 == 0) or (color_orig == NEGRO and y1 == 7)) then
+                Tablero[x1][y1].pieza = DAMA
+            end
+        end
+
+        // Evaluate
+        var valor = -negamax(PROFUNDIDAD_BUSQUEDA - 1, -INFINITO, INFINITO, oponente)
+
+        // Restore
+        Tablero[x0][y0].pieza = pieza_orig
+        Tablero[x0][y0].color_pieza = color_orig
+        Tablero[x1][y1].pieza = pieza_dest
+        Tablero[x1][y1].color_pieza = color_dest
+
+        if (es_paso) then
+            Tablero[x1][y0].pieza = pieza_paso
+            Tablero[x1][y0].color_pieza = color_paso
+        end
+
+        if (es_enroque) then
+            Tablero[torre_enroque_x0][y0].pieza = TORRE
+            Tablero[torre_enroque_x0][y0].color_pieza = color_orig
+            Tablero[torre_enroque_x1][y0].pieza = NINGUNA
+            Tablero[torre_enroque_x1][y0].color_pieza = NINGUNO
+        end
+
+        Estado.peon_doble_x = peon_x_ant
+        Estado.peon_doble_y = peon_y_ant
+        Estado.rey_blanco_movido = rey_b_ant
+        Estado.rey_negro_movido = rey_n_ant
+        Estado.torre_a1_movida = torre_a1_ant
+        Estado.torre_h1_movida = torre_h1_ant
+        Estado.torre_a8_movida = torre_a8_ant
+        Estado.torre_h8_movida = torre_h8_ant
+
+        // Penalize recent target repetition
+        var hist = (color_ia == BLANCO) ? penultimo_mov_b : penultimo_mov_n
+        if (hist != nil) then
+            if (mov[2] == hist[2] and mov[3] == hist[3]) then
+                valor -= 75
+            end
+        end
+
+        if (valor > mejor_valor or (valor == mejor_valor and random(2) == 0)) then
+            mejor_valor = valor
+            mejor_movimiento = mov
+        end
+    end
+
+    return mejor_movimiento
+end
+
