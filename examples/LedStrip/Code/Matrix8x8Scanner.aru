@@ -1,0 +1,81 @@
+use LED
+
+const WIDTH  = 8
+const HEIGHT = 8
+
+func xy(x, y)
+    return y * WIDTH + x
+end
+
+func pixel(strip, x, y, r, g, b)
+    if (x < 0 or x >= WIDTH or y < 0 or y >= HEIGHT) then
+        return
+    end
+
+    strip.setPixel(xy(x, y), r, g, b)
+end
+
+func abs(v)
+    if (v < 0) then
+        return -v
+    end
+    return v
+end
+
+func cls(strip)
+    strip.clear()
+end
+
+func drawScanner(strip, pos)
+    for (var y = 0; y < HEIGHT; y++)
+        for (var x = 0; x < WIDTH; x++)
+            var d = abs(x - pos)
+
+            if (d == 0) then
+                pixel(strip, x, y, 120, 120, 120)
+            else
+                if (d == 1) then
+                    pixel(strip, x, y, 60, 20, 120)
+                else
+                    if (d == 2) then
+                        pixel(strip, x, y, 10, 0, 40)
+                    end
+                end
+            end
+        end
+    end
+end
+
+func drawFrame(strip)
+    for (var x = 0; x < WIDTH; x++)
+        pixel(strip, x, 0, 0, 20, 40)
+        pixel(strip, x, HEIGHT - 1, 0, 20, 40)
+    end
+
+    for (var y = 0; y < HEIGHT; y++)
+        pixel(strip, 0, y, 0, 20, 40)
+        pixel(strip, WIDTH - 1, y, 0, 20, 40)
+    end
+end
+
+var strip = LED.new(17, 64)
+strip.setBrightness(128)
+
+while (true)
+    for (var x = 0; x < WIDTH; x++)
+        cls(strip)
+        drawFrame(strip)
+        drawScanner(strip, x)
+        strip.show()
+        pause(90)
+    end
+
+    for (var x = WIDTH - 2; x > 0; x--)
+        cls(strip)
+        drawFrame(strip)
+        drawScanner(strip, x)
+        strip.show()
+        pause(90)
+    end
+end
+

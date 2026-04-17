@@ -1,0 +1,47 @@
+digraph{
+    node [shape=box]
+    0 [label="0 Root\l--------"]
+    0 -> 2
+    2 [label="2 Expression"]
+    2 -> 4
+    4 [label="4 Call\lprintln()"]
+    4 -> 5
+    5 [label="5 String\lIntroduce un número para calcular su factorial:"]
+    0 [label="0 Root\l--------"]
+    0 -> 6
+    6 [label="6 Var Declare\l-----------------\lnumero"]
+    7 [label ="6 Var : numero"]
+    6 -> 7
+    7 [label="7 Integer\l7"]
+    0 [label="0 Root\l--------"]
+    0 -> 8
+    8 [label="8 Var Declare\l-----------------\lfactorial"]
+    9 [label ="8 Var : factorial"]
+    8 -> 9
+    9 [label="9 Integer\l1"]
+    0 [label="0 Root\l--------"]
+    0 -> 10
+    10 [label="10 Var Declare\l-----------------\li"]
+    11 [label ="10 Var : i"]
+    10 -> 11
+    11 [label="11 Integer\l1"]
+    0 [label="0 Root\l--------"]
+    0 -> 12
+    12 [label="12 If Then\l--------"]
+    12 -> 16
+    16 [label="16 Block"]
+    16 -> 17
+    17 [label="17 Expression"]
+    17 -> 19
+    19 [label="19 Call\lprintln()"]
+    19 -> 20
+    20 [label="20 String\lError: El factorial no está definido para números negativos."]
+    12 -> 24
+    24 [label="24 Block"]
+    24 -> 25
+    25 [label="25 Expression"]
+    25 -> 27
+    27 [label="27 Call\lprintln()"]
+    27 -> 28
+    28 [label="28 String\lEl factorial de 0 es 1."]
+}

@@ -1,0 +1,35 @@
+// FibonacciGenerator
+// Created: 2025-07-21
+// Author: Jon Otero
+// Version: 1.0.0
+
+
+println("--- Fibonacci Sequence Generator ---")
+println("Enter how many numbers of the sequence you want to generate:")
+
+var entrada = readLine()
+var n = entrada.toInt()
+
+if (n <= 0) then
+    println("Error: Please enter a positive number.")
+else
+    // Initialize the first two numbers of the sequence
+    var a = 0
+    var b = 1
+
+    println("The first ", n, " numbers of the Fibonacci sequence are:")
+
+    for (var i = 0; i < n; i++)
+        print(a)
+
+        if (i < n - 1) then
+            print(", ")
+        end
+
+        var siguiente = a + b
+        a = b
+        b = siguiente
+    end
+
+    println()
+end

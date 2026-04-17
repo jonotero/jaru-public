@@ -1,0 +1,49 @@
+use LED
+
+const WIDTH  = 8
+const HEIGHT = 8
+
+func xy(x, y)
+    return y * WIDTH + x
+end
+
+func pixel(strip, x, y, r, g, b)
+    if (x < 0 or x >= WIDTH or y < 0 or y >= HEIGHT) then
+        return
+    end
+
+    strip.setPixel(xy(x, y), r, g, b)
+end
+
+func abs(v)
+    if (v < 0) then
+        return -v
+    end
+    return v
+end
+
+var strip = LED.new(17, 64)
+strip.setBrightness(255)
+
+var t = 0
+
+while (true)
+    for (var y = 0; y < HEIGHT; y++)
+        for (var x = 0; x < WIDTH; x++)
+            var v1 = (x * 32 + t) % 256
+            var v2 = (y * 32 + t * 2) % 256
+            var v3 = ((x + y) * 16 + t * 3) % 256
+
+            var r = v1
+            var g = v2
+            var b = v3
+
+            pixel(strip, x, y, r, g, b)
+        end
+    end
+
+    strip.show()
+    pause(70)
+    t = t + 1
+end
+

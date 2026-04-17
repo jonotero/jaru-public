@@ -1,0 +1,75 @@
+use LED, Math
+
+const WIDTH  = 8
+const HEIGHT = 8
+
+func xy(x, y)
+    return y * WIDTH + x
+end
+
+func pixelHSV(strip, x, y, h, s, v)
+    if (x < 0 or x >= WIDTH or y < 0 or y >= HEIGHT) then
+        return
+    end
+
+    strip.setHSV(xy(x, y), h, s, v)
+end
+
+func clamp(v, minv, maxv)
+    if (v < minv) then
+        return minv
+    end
+
+    if (v > maxv) then
+        return maxv
+    end
+
+    return v
+end
+
+var strip = LED.new(17, 64)
+strip.setBrightness(255)
+
+var t = 0.0
+
+while (true)
+
+    for (var y = 0; y < HEIGHT; y++)
+        for (var x = 0; x < WIDTH; x++)
+
+            // Centered coordinates
+            var fx = x - 3.5
+            var fy = y - 3.5
+
+            // Distance to center
+            var d = Math.sqrt(fx * fx + fy * fy)
+
+            // Classic plasma: mix of several waves
+            var v1 = Math.sin(fx * 0.90 + t)
+            var v2 = Math.sin((fy * 1.10) - (t * 1.30))
+            var v3 = Math.sin((fx + fy) * 0.70 + (t * 0.80))
+            var v4 = Math.cos(d * 1.80 - (t * 1.60))
+
+            var plasma = v1 + v2 + v3 + v4
+
+            // Map approx. from [-4..4] to [0..359]
+            var hue = Math.floor(((plasma + 4.0) / 8.0) * 359.0)
+
+            // Slight variation in saturation and value
+            var sat = 255
+            var val = 160 + Math.floor((Math.sin(d * 2.5 - t * 2.0) + 1.0) * 40.0)
+
+            val = clamp(val, 80, 255)
+
+            pixelHSV(strip, x, y, hue, sat, val)
+
+        end
+    end
+
+    strip.show()
+    pause(40)
+
+    t = t + 0.18
+
+end
+

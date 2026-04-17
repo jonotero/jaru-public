@@ -1,0 +1,27 @@
+// Factorial_WhileLoop
+// Created: 2025-07-21
+// Author: Jon Otero
+// Version: 1.0.0
+
+
+// Factorial calculator using a while loop
+
+println("Enter a number to calculate its factorial:")
+var numero = 7
+var factorial = 1
+var i = 1
+
+// Check if the number is negative
+if (numero < 0) then
+    println("Error: Factorial is not defined for negative numbers.")
+elsif (numero == 0) then
+    println("The factorial of 0 is 1.")
+else
+    // Calculate the factorial using a while loop
+    while (i <= numero)
+        factorial = factorial * i
+        i++
+    end
+
+    println("The factorial of ", numero, " is ", factorial)
+end
