@@ -1,0 +1,58 @@
+digraph{
+    node [shape=box]
+    0 [label="0 Root\l--------"]
+    0 -> 2
+    2 [label="2 Expression"]
+    2 -> 4
+    4 [label="4 Call\lprintln()"]
+    4 -> 5
+    5 [label="5 String\lIntroduce un número para comprobar si es primo:"]
+    0 [label="0 Root\l--------"]
+    0 -> 6
+    6 [label="6 Var Declare\l-----------------\lentrada"]
+    8 [label ="6 Var : entrada"]
+    6 -> 8
+    8 [label="8 Call\lreadLine()"]
+    0 [label="0 Root\l--------"]
+    0 -> 9
+    9 [label="9 Var Declare\l-----------------\lnumero"]
+    11 [label ="9 Var : numero"]
+    9 -> 11
+    11 [label="11 Infix Dot"]
+    11 -> 10
+    10 [label="10 Identifier\lentrada"]
+    11 -> 13
+    13 [label="13 Call\ltoInt()"]
+    0 [label="0 Root\l--------"]
+    0 -> 14
+    14 [label="14 Var Declare\l-----------------\lesPrimo"]
+    15 [label ="14 Var : esPrimo"]
+    14 -> 15
+    15 [label="15 Bool\l1"]
+    0 [label="0 Root\l--------"]
+    0 -> 16
+    16 [label="16 If Then\l--------"]
+    16 -> 20
+    20 [label="20 Block"]
+    20 -> 21
+    21 [label="21 Expression"]
+    21 -> 23
+    23 [label="23 Assign\l-------------\l="]
+    23 -> 22
+    22 [label="22 Identifier\lesPrimo"]
+    23 -> 25
+    25 [label="25 Bool\l0"]
+    0 [label="0 Root\l--------"]
+    0 -> 51
+    51 [label="51 If Then\l--------"]
+    51 -> 53
+    53 [label="53 Block"]
+    53 -> 54
+    54 [label="54 Expression"]
+    54 -> 56
+    56 [label="56 Call\lprintln()"]
+    56 -> 57
+    57 [label="57 Identifier\lnumero"]
+    56 -> 58
+    58 [label="58 String\l es un número primo."]
+}

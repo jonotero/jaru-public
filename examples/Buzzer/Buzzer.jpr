@@ -1,0 +1,48 @@
+{
+  "mainfilename" : "Code\\Buzzer.aru",
+  "mainfileid" : 3,
+  "nodes" : [
+    {
+      "id" : 0,
+      "name" : "Code",
+      "filename" : "",
+      "filepathrelative" : "Code",
+      "filesize" : 0,
+      "nodetype" : 0,
+      "metadata" : {},
+      "children" : [
+        {
+          "id" : 3,
+          "name" : "Buzzer.aru",
+          "filename" : "Buzzer.aru",
+          "filepathrelative" : "Code\\Buzzer.aru",
+          "filesize" : 3886,
+          "nodetype" : 1,
+          "metadata" : {
+            "IsASTDirty" : true
+          }
+        }
+      ]
+    },
+    {
+      "id" : 1,
+      "name" : "Images",
+      "filename" : "",
+      "filepathrelative" : "Images",
+      "filesize" : 0,
+      "nodetype" : 0,
+      "metadata" : {}
+    },
+    {
+      "id" : 2,
+      "name" : "Sprites",
+      "filename" : "",
+      "filepathrelative" : "Sprites",
+      "filesize" : 0,
+      "nodetype" : 0,
+      "metadata" : {}
+    }
+  ],
+  "projectname" : "Buzzer",
+  "description" : "Test del buzzer en el Freenova Kit"
+}

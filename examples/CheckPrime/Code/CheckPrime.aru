@@ -1,0 +1,30 @@
+// CheckPrime
+// Created: 2025-07-21
+// Author: Jon Otero
+// Version: 1.0.0
+
+// Checks whether a number is prime
+
+println("Enter a number to check if it is prime:")
+var entrada = readLine()
+var numero = entrada.toInt()
+var esPrimo = true
+
+// Numbers less than or equal to 1 are not prime
+if (numero <= 1) then
+    esPrimo = false
+else
+    // Check divisibility from 2 up to half the number
+    for (var i = 2; i <= numero / 2; i++)
+        if (numero mod i == 0) then
+            esPrimo = false
+            break
+        end
+    end
+end
+
+if (esPrimo) then
+    println(numero, " is a prime number.")
+else
+    println(numero, " is not a prime number.")
+end

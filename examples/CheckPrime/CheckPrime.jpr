@@ -1,0 +1,48 @@
+{
+  "mainfilename" : "Code\\CheckPrime.aru",
+  "mainfileid" : 3,
+  "nodes" : [
+    {
+      "id" : 0,
+      "name" : "Code",
+      "filename" : "",
+      "filepathrelative" : "Code",
+      "filesize" : 0,
+      "nodetype" : 0,
+      "metadata" : {},
+      "children" : [
+        {
+          "id" : 3,
+          "name" : "CheckPrime.aru",
+          "filename" : "CheckPrime.aru",
+          "filepathrelative" : "Code\\CheckPrime.aru",
+          "filesize" : 987,
+          "nodetype" : 1,
+          "metadata" : {
+            "IsASTDirty" : true
+          }
+        }
+      ]
+    },
+    {
+      "id" : 1,
+      "name" : "Images",
+      "filename" : "",
+      "filepathrelative" : "Images",
+      "filesize" : 0,
+      "nodetype" : 0,
+      "metadata" : {}
+    },
+    {
+      "id" : 2,
+      "name" : "Sprites",
+      "filename" : "",
+      "filepathrelative" : "Sprites",
+      "filesize" : 0,
+      "nodetype" : 0,
+      "metadata" : {}
+    }
+  ],
+  "projectname" : "CheckPrime",
+  "description" : "Checker for whether a number is prime"
+}
