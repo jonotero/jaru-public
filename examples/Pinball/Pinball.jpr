@@ -1,0 +1,49 @@
+{
+  "mainfilename" : "Code\\Pinball.aru",
+  "mainfileid" : 3,
+  "active_esp32_chip" : "ESP32",
+  "nodes" : [
+    {
+      "id" : 0,
+      "name" : "Code",
+      "filename" : "",
+      "filepathrelative" : "Code",
+      "filesize" : 0,
+      "nodetype" : 0,
+      "metadata" : {},
+      "children" : [
+        {
+          "id" : 3,
+          "name" : "Pinball.aru",
+          "filename" : "Pinball.aru",
+          "filepathrelative" : "Code\\Pinball.aru",
+          "filesize" : 26417,
+          "nodetype" : 1,
+          "metadata" : {
+            "IsASTDirty" : true
+          }
+        }
+      ]
+    },
+    {
+      "id" : 1,
+      "name" : "Images",
+      "filename" : "",
+      "filepathrelative" : "Images",
+      "filesize" : 0,
+      "nodetype" : 0,
+      "metadata" : {}
+    },
+    {
+      "id" : 2,
+      "name" : "Sprites",
+      "filename" : "",
+      "filepathrelative" : "Sprites",
+      "filesize" : 0,
+      "nodetype" : 0,
+      "metadata" : {}
+    }
+  ],
+  "projectname" : "Pinball",
+  "description" : ""
+}
