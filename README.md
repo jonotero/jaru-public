@@ -10,7 +10,7 @@ This repository is the **public hub for feedback and resources related to the JA
 ## 📌 What is JARU?
 
 JARU is a **is a programming language designed for IoT and embedded development**, with a focus on simplicity and fast prototyping.  
-It runs on a dedicated virtual machine and is especially suited for **embedded systems**, such as **ESP32 and RISC-V platforms**.
+It runs on a dedicated virtual machine and is especially suited for **embedded systems**, such as **ESP32 and ESP32-S3 platforms**.
 
 Key characteristics include:
 
