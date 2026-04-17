@@ -1,0 +1,89 @@
+/*********************************************************
+ * Chess Game - Initialization
+ *********************************************************/
+
+import "chess_types"
+
+// Global board
+var Tablero = []
+var Estado = TEstado()
+
+func iniciar_tablero()
+    var piezas = [TORRE, CABALLO, ALFIL, DAMA, REY, ALFIL, CABALLO, TORRE]
+
+    // Create 8x8 matrix
+    for (var i = 0; i < 8; i++)
+        Tablero.append([
+            TCasilla(), TCasilla(), TCasilla(), TCasilla(),
+            TCasilla(), TCasilla(), TCasilla(), TCasilla()
+        ])
+    end
+
+    // Place pieces
+    for (var i = 0; i < 8; i++)
+        // Black pieces (row 0)
+        Tablero[i][0].pieza = piezas[i]
+        Tablero[i][0].color_pieza = NEGRO
+
+        // Black pawns (row 1)
+        Tablero[i][1].pieza = PEON
+        Tablero[i][1].color_pieza = NEGRO
+
+        // White pawns (row 6)
+        Tablero[i][6].pieza = PEON
+        Tablero[i][6].color_pieza = BLANCO
+
+        // White pieces (row 7)
+        Tablero[i][7].pieza = piezas[i]
+        Tablero[i][7].color_pieza = BLANCO
+    end
+
+    // Reset state
+    Estado = TEstado()
+end
+
+// Show board in console
+func mostrar_tablero()
+    println("    a  b  c  d  e  f  g  h")
+    println("  +------------------------+")
+
+    for (var y = 0; y < 8; y++)
+        print(8 - y, " |")
+        for (var x = 0; x < 8; x++)
+            var pieza = Tablero[x][y].pieza
+            var color = Tablero[x][y].color_pieza
+
+            if (pieza != NINGUNA) then
+                var letra = piezas_dict[pieza]
+                if (color == BLANCO) then
+                    print(" ", letra, " ")
+                else
+                    print(" ", letra.lower(), " ")  // Lowercase for black
+                end
+            else
+                print(" . ")
+            end
+        end
+        println("| ", 8 - y)
+    end
+    println("  +------------------------+")
+    println("    a  b  c  d  e  f  g  h")
+end
+
+// Convert move to algebraic notation
+func movimiento_a_texto(mov)
+    if (mov == nil) then
+        return "null"
+    end
+
+    var cols = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+    var filas = ['8', '7', '6', '5', '4', '3', '2', '1']  // as strings
+
+    var x0 = mov[0]
+    var y0 = mov[1]
+    var x1 = mov[2]
+    var y1 = mov[3]
+
+    return cols[x0] + filas[y0] + cols[x1] + filas[y1]
+end
+

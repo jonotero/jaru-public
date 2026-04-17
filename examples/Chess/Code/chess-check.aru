@@ -1,0 +1,331 @@
+/*********************************************************
+* Chess Game - Check Detection
+**********************************************************/
+use Math
+import "chess_types"
+import "chess_moves"
+
+// Checks if piece at (x0,y0) can attack (x1,y1)
+func puede_atacar(x0, y0, x1, y1)
+    var pieza = Tablero[x0][y0].pieza
+    var color = Tablero[x0][y0].color_pieza
+    var dx = x1 - x0
+    var dy = y1 - y0
+    var adx = abs(dx)
+    var ady = abs(dy)
+
+    switch (pieza)
+        case PEON:
+            // Pawns attack diagonally
+            if (adx == 1) then
+                if (color == BLANCO and dy == -1) then return true end
+                if (color == NEGRO and dy == 1) then return true end
+            end
+            return false
+
+        case CABALLO:
+            return (adx == 1 and ady == 2) or (adx == 2 and ady == 1)
+
+        case ALFIL:
+            if (adx != ady or adx == 0) then return false end
+            return camino_libre_diagonal(x0, y0, x1, y1)
+
+        case TORRE:
+            if (dx != 0 and dy != 0) then return false end
+            if (dx == 0 and dy == 0) then return false end
+            return camino_libre_recto(x0, y0, x1, y1)
+
+        case DAMA:
+            if (dx == 0 or dy == 0) then
+                if (dx == 0 and dy == 0) then return false end
+                return camino_libre_recto(x0, y0, x1, y1)
+            elsif (adx == ady) then
+                return camino_libre_diagonal(x0, y0, x1, y1)
+            end
+            return false
+
+        case REY:
+            return adx <= 1 and ady <= 1 and (adx + ady) > 0
+    end
+    return false
+end
+
+// Checks clear path in straight line
+func camino_libre_recto(x0, y0, x1, y1)
+    var dx = Math.sign(x1 - x0)
+    var dy = Math.sign(y1 - y0)
+    var x = x0 + dx
+    var y = y0 + dy
+
+    while (x != x1 or y != y1)
+        if (Tablero[x][y].pieza != NINGUNA) then
+            return false
+        end
+        x += dx
+        y += dy
+    end
+    return true
+end
+
+// Checks clear diagonal path
+func camino_libre_diagonal(x0, y0, x1, y1)
+    var dx = Math.sign(x1 - x0)
+    var dy = Math.sign(y1 - y0)
+    var x = x0 + dx
+    var y = y0 + dy
+
+    while (x != x1)
+        if (Tablero[x][y].pieza != NINGUNA) then
+            return false
+        end
+        x += dx
+        y += dy
+    end
+    return true
+end
+
+// Checks if square is under attack by attacking color
+func casilla_bajo_ataque(x, y, color_atacante)
+    for (var xi = 0; xi < 8; xi++)
+        for (var yi = 0; yi < 8; yi++)
+            if (Tablero[xi][yi].color_pieza == color_atacante) then
+                if (puede_atacar(xi, yi, x, y)) then
+                    return true
+                end
+            end
+        end
+    end
+    return false
+end
+
+// Compatibility alias
+func casilla_amenazada(x, y, color_atacante)
+    return casilla_bajo_ataque(x, y, color_atacante)
+end
+
+// Returns king position (O(1) cache)
+func encontrar_rey(color)
+    if (color == BLANCO) then
+        return [Estado.rey_blanco_x, Estado.rey_blanco_y]
+    else
+        return [Estado.rey_negro_x, Estado.rey_negro_y]
+    end
+end
+
+// Checks if a king is in check
+func esta_en_jaque(color)
+    var pos_rey = encontrar_rey(color)
+    if (pos_rey == nil) then
+        return false
+    end
+    var oponente = (color == BLANCO) ? NEGRO : BLANCO
+    return casilla_bajo_ataque(pos_rey[0], pos_rey[1], oponente)
+end
+
+// Simulates move and checks if it leaves king in check (no clone)
+func movimiento_deja_en_jaque(x_orig, y_orig, x_dest, y_dest)
+    // Save minimal state
+    var pieza_orig = Tablero[x_orig][y_orig].pieza
+    var color_orig = Tablero[x_orig][y_orig].color_pieza
+    var pieza_dest = Tablero[x_dest][y_dest].pieza
+    var color_dest = Tablero[x_dest][y_dest].color_pieza
+
+    // En passant
+    var pieza_paso = NINGUNA
+    var color_paso = NINGUNO
+    var es_captura_paso = false
+
+    if (pieza_orig == PEON and x_orig != x_dest and pieza_dest == NINGUNA) then
+        es_captura_paso = true
+        pieza_paso = Tablero[x_dest][y_orig].pieza
+        color_paso = Tablero[x_dest][y_orig].color_pieza
+        Tablero[x_dest][y_orig].pieza = NINGUNA
+        Tablero[x_dest][y_orig].color_pieza = NINGUNO
+    end
+
+    // Update king cache if moved
+    var rey_x_ant = -1
+    var rey_y_ant = -1
+    if (pieza_orig == REY) then
+        if (color_orig == BLANCO) then
+            rey_x_ant = Estado.rey_blanco_x
+            rey_y_ant = Estado.rey_blanco_y
+            Estado.rey_blanco_x = x_dest
+            Estado.rey_blanco_y = y_dest
+        else
+            rey_x_ant = Estado.rey_negro_x
+            rey_y_ant = Estado.rey_negro_y
+            Estado.rey_negro_x = x_dest
+            Estado.rey_negro_y = y_dest
+        end
+    end
+
+    // Apply temporary move
+    Tablero[x_dest][y_dest].pieza = pieza_orig
+    Tablero[x_dest][y_dest].color_pieza = color_orig
+    Tablero[x_orig][y_orig].pieza = NINGUNA
+    Tablero[x_orig][y_orig].color_pieza = NINGUNO
+
+    // Check for check
+    var en_jaque = esta_en_jaque(color_orig)
+
+    // Restore board
+    Tablero[x_orig][y_orig].pieza = pieza_orig
+    Tablero[x_orig][y_orig].color_pieza = color_orig
+    Tablero[x_dest][y_dest].pieza = pieza_dest
+    Tablero[x_dest][y_dest].color_pieza = color_dest
+
+    if (es_captura_paso) then
+        Tablero[x_dest][y_orig].pieza = pieza_paso
+        Tablero[x_dest][y_orig].color_pieza = color_paso
+    end
+
+    // Restore king cache
+    if (pieza_orig == REY) then
+        if (color_orig == BLANCO) then
+            Estado.rey_blanco_x = rey_x_ant
+            Estado.rey_blanco_y = rey_y_ant
+        else
+            Estado.rey_negro_x = rey_x_ant
+            Estado.rey_negro_y = rey_y_ant
+        end
+    end
+
+    return en_jaque
+end
+
+// Generate all legal moves
+func movimientos_legales(color)
+    var lista = []
+    for (var x0 = 0; x0 < 8; x0++)
+        for (var y0 = 0; y0 < 8; y0++)
+            if (Tablero[x0][y0].color_pieza != color) then
+                continue
+            end
+            for (var x1 = 0; x1 < 8; x1++)
+                for (var y1 = 0; y1 < 8; y1++)
+                    if (validar_movimiento(x0, y0, x1, y1) and
+                        !movimiento_deja_en_jaque(x0, y0, x1, y1)) then
+                        lista.append([x0, y0, x1, y1])
+                    end
+                end
+            end
+        end
+    end
+    return lista
+end
+
+// Verify Checkmate
+func es_jaque_mate(color)
+    if (!esta_en_jaque(color)) then
+        return false
+    end
+    var jugadas = movimientos_legales(color)
+    return (jugadas.size() == 0)
+end
+
+// Verify Stalemate
+func es_ahogado(color)
+    if (esta_en_jaque(color)) then
+        return false
+    end
+    var jugadas = movimientos_legales(color)
+    return (jugadas.size() == 0)
+end
+
+// Execute move with check validation
+func realizar_movimiento_seguro(x_orig, y_orig, x_dest, y_dest)
+    if (!validar_movimiento(x_orig, y_orig, x_dest, y_dest)) then
+        return false
+    end
+    if (movimiento_deja_en_jaque(x_orig, y_orig, x_dest, y_dest)) then
+        println("Invalid move: leaves your king in check.")
+        return false
+    end
+
+    var pieza = Tablero[x_orig][y_orig].pieza
+    var color = Tablero[x_orig][y_orig].color_pieza
+
+    // Update king cache and castling flags
+    if (pieza == REY) then
+        if (color == BLANCO) then
+            Estado.rey_blanco_movido = true
+            Estado.rey_blanco_x = x_dest
+            Estado.rey_blanco_y = y_dest
+        else
+            Estado.rey_negro_movido = true
+            Estado.rey_negro_x = x_dest
+            Estado.rey_negro_y = y_dest
+        end
+        // Execute castling
+        if (abs(x_dest - x_orig) == 2) then
+            var fila = y_orig
+            if (x_dest == 6) then
+                Tablero[5][fila].pieza = TORRE
+                Tablero[5][fila].color_pieza = color
+                Tablero[7][fila].pieza = NINGUNA
+                Tablero[7][fila].color_pieza = NINGUNO
+            else
+                Tablero[3][fila].pieza = TORRE
+                Tablero[3][fila].color_pieza = color
+                Tablero[0][fila].pieza = NINGUNA
+                Tablero[0][fila].color_pieza = NINGUNO
+            end
+        end
+    end
+
+    if (pieza == TORRE) then
+        if (x_orig == 0 and y_orig == 7) then Estado.torre_a1_movida = true end
+        if (x_orig == 7 and y_orig == 7) then Estado.torre_h1_movida = true end
+        if (x_orig == 0 and y_orig == 0) then Estado.torre_a8_movida = true end
+        if (x_orig == 7 and y_orig == 0) then Estado.torre_h8_movida = true end
+    end
+
+    // En passant
+    if (pieza == PEON and x_orig != x_dest and Tablero[x_dest][y_dest].pieza == NINGUNA) then
+        Tablero[x_dest][y_orig].pieza = NINGUNA
+        Tablero[x_dest][y_orig].color_pieza = NINGUNO
+    end
+
+    // Store en passant info
+    if (pieza == PEON and abs(y_dest - y_orig) == 2) then
+        Estado.peon_doble_x = x_dest
+        Estado.peon_doble_y = y_dest
+    else
+        Estado.peon_doble_x = -1
+        Estado.peon_doble_y = -1
+    end
+
+    // Execute move
+    Tablero[x_dest][y_dest].pieza = pieza
+    Tablero[x_dest][y_dest].color_pieza = color
+    Tablero[x_orig][y_orig].pieza = NINGUNA
+    Tablero[x_orig][y_orig].color_pieza = NINGUNO
+
+    // Promotion
+    if (pieza == PEON) then
+        if ((color == BLANCO and y_dest == 0) or (color == NEGRO and y_dest == 7)) then
+            Tablero[x_dest][y_dest].pieza = DAMA
+        end
+    end
+
+    // Verificar jaque/mate al oponente
+    var oponente = (color == BLANCO) ? NEGRO : BLANCO
+    if (esta_en_jaque(oponente)) then
+        if (es_jaque_mate(oponente)) then
+            var ganador = (color == BLANCO) ? "WHITE" : "BLACK"
+            println("\nCHECKMATE! ", ganador, " wins!")
+            Estado.terminar = true
+        else
+            println("\nCHECK!")
+        end
+    elsif (es_ahogado(oponente)) then
+        println("\nSTALEMATE - DRAW!")
+        Estado.terminar = true
+    end
+
+    Estado.turno = oponente
+    Estado.movimientos++
+    return true
+end
+

@@ -1,0 +1,333 @@
+/********************************************************
+ * Chess Game - Move Validation
+ ********************************************************/
+import "chess_types"
+
+
+// Converts a letter (a-h) to column index (0-7)
+func convertir_a_numero(letra)
+    var num
+    switch (letra)
+        case 'a': num = 0
+        case 'b': num = 1
+        case 'c': num = 2
+        case 'd': num = 3
+        case 'e': num = 4
+        case 'f': num = 5
+        case 'g': num = 6
+        case 'h': num = 7
+        default: num = -1
+    end
+    return num
+end
+
+// Validates move is within the board
+func esta_en_tablero(x, y)
+    return x >= 0 and x < 8 and y >= 0 and y < 8
+end
+
+// Checks if destination has a same-color piece
+func hay_pieza_mismo_color(x_dest, y_dest, color)
+    return Tablero[x_dest][y_dest].color_pieza == color
+end
+
+// Validates pawn move (includes en passant)
+func validar_peon(x_orig, y_orig, x_dest, y_dest, color)
+    var direccion = (color == BLANCO) ? -1 : 1
+    var fila_inicial = (color == BLANCO) ? 6 : 1
+    var fila_paso = (color == BLANCO) ? 3 : 4  // Row where en passant is possible
+
+    // 1) Diagonal capture
+    if (abs(x_dest - x_orig) == 1 and y_dest == y_orig + direccion) then
+        // Normal capture
+        if (Tablero[x_dest][y_dest].pieza != NINGUNA and
+            Tablero[x_dest][y_dest].color_pieza != color) then
+            return true
+        end
+        // En passant
+        if (y_orig == fila_paso and
+            Estado.peon_doble_x == x_dest and
+            Estado.peon_doble_y == y_orig) then
+            return true
+        end
+        return false
+    end
+
+    // 2) Movimiento simple hacia adelante
+    if (x_orig == x_dest and y_dest == y_orig + direccion) then
+        return (Tablero[x_dest][y_dest].pieza == NINGUNA)
+    end
+
+    // 3) Movimiento doble inicial
+    if (x_orig == x_dest and
+        y_orig == fila_inicial and
+        y_dest == y_orig + 2 * direccion) then
+        return (Tablero[x_dest][y_dest].pieza == NINGUNA and
+                Tablero[x_dest][y_orig + direccion].pieza == NINGUNA)
+    end
+
+    return false
+end
+
+// Validates rook move
+func validar_torre(x_orig, y_orig, x_dest, y_dest)
+    if (x_orig != x_dest and y_orig != y_dest) then
+        return false
+    end
+
+    if (x_orig == x_dest) then
+        var paso = (y_dest > y_orig) ? 1 : -1
+        var y = y_orig + paso
+        while (y != y_dest)
+            if (Tablero[x_orig][y].pieza != NINGUNA) then
+                return false
+            end
+            y += paso
+        end
+    else
+        var paso = (x_dest > x_orig) ? 1 : -1
+        var x = x_orig + paso
+        while (x != x_dest)
+            if (Tablero[x][y_orig].pieza != NINGUNA) then
+                return false
+            end
+            x += paso
+        end
+    end
+
+    return true
+end
+
+// Validates bishop move
+func validar_alfil(x_orig, y_orig, x_dest, y_dest)
+    if (x_orig == x_dest and y_orig == y_dest) then
+        return false
+    end
+
+    if (abs(x_dest - x_orig) != abs(y_dest - y_orig)) then
+        return false
+    end
+
+    var paso_x = (x_dest > x_orig) ? 1 : -1
+    var paso_y = (y_dest > y_orig) ? 1 : -1
+    var x = x_orig + paso_x
+    var y = y_orig + paso_y
+
+    while (x != x_dest)
+        if (Tablero[x][y].pieza != NINGUNA) then
+            return false
+        end
+        x += paso_x
+        y += paso_y
+    end
+
+    return true
+end
+
+// Validates knight move
+func validar_caballo(x_orig, y_orig, x_dest, y_dest)
+    var dx = abs(x_dest - x_orig)
+    var dy = abs(y_dest - y_orig)
+    return (dx == 1 and dy == 2) or (dx == 2 and dy == 1)
+end
+
+// Validates queen move
+func validar_dama(x_orig, y_orig, x_dest, y_dest)
+    return validar_torre(x_orig, y_orig, x_dest, y_dest) or
+           validar_alfil(x_orig, y_orig, x_dest, y_dest)
+end
+
+// Validates king move (castling validated separately)
+func validar_rey(x_orig, y_orig, x_dest, y_dest)
+    if (x_orig == x_dest and y_orig == y_dest) then
+        return false
+    end
+    return abs(x_dest - x_orig) <= 1 and abs(y_dest - y_orig) <= 1
+end
+
+// Validate castling
+func validar_enroque(x_orig, y_orig, x_dest, y_dest, color)
+    // King must move 2 squares horizontally
+    if (abs(x_dest - x_orig) != 2 or y_dest != y_orig) then
+        return false
+    end
+
+    var fila = (color == BLANCO) ? 7 : 0
+    if (y_orig != fila) then
+        return false
+    end
+
+    // Verify king has not moved
+    if (color == BLANCO and Estado.rey_blanco_movido) then
+        return false
+    end
+    if (color == NEGRO and Estado.rey_negro_movido) then
+        return false
+    end
+
+    var oponente = (color == BLANCO) ? NEGRO : BLANCO
+
+    // Kingside castling
+    if (x_dest == 6) then
+        if (color == BLANCO and Estado.torre_h1_movida) then
+            return false
+        end
+        if (color == NEGRO and Estado.torre_h8_movida) then
+            return false
+        end
+        // Verify rook in position
+        if (Tablero[7][fila].pieza != TORRE or Tablero[7][fila].color_pieza != color) then
+            return false
+        end
+        // Squares between king and rook must be empty
+        if (Tablero[5][fila].pieza != NINGUNA or Tablero[6][fila].pieza != NINGUNA) then
+            return false
+        end
+        // King cannot be in check or pass through attacked squares
+        if (casilla_bajo_ataque(4, fila, oponente) or
+            casilla_bajo_ataque(5, fila, oponente) or
+            casilla_bajo_ataque(6, fila, oponente)) then
+            return false
+        end
+        return true
+    end
+
+    // Queenside castling
+    if (x_dest == 2) then
+        if (color == BLANCO and Estado.torre_a1_movida) then
+            return false
+        end
+        if (color == NEGRO and Estado.torre_a8_movida) then
+            return false
+        end
+        // Verify rook in position
+        if (Tablero[0][fila].pieza != TORRE or Tablero[0][fila].color_pieza != color) then
+            return false
+        end
+        // Squares between king and rook must be empty
+        if (Tablero[1][fila].pieza != NINGUNA or
+            Tablero[2][fila].pieza != NINGUNA or
+            Tablero[3][fila].pieza != NINGUNA) then
+            return false
+        end
+        // King cannot be in check or pass through attacked squares
+        if (casilla_bajo_ataque(4, fila, oponente) or
+            casilla_bajo_ataque(3, fila, oponente) or
+            casilla_bajo_ataque(2, fila, oponente)) then
+            return false
+        end
+        return true
+    end
+
+    return false
+end
+
+// Validates any move
+func validar_movimiento(x_orig, y_orig, x_dest, y_dest)
+    if (!esta_en_tablero(x_orig, y_orig) or !esta_en_tablero(x_dest, y_dest)) then
+        return false
+    end
+
+    if (Tablero[x_orig][y_orig].pieza == NINGUNA) then
+        return false
+    end
+
+    var color = Tablero[x_orig][y_orig].color_pieza
+    if (hay_pieza_mismo_color(x_dest, y_dest, color)) then
+        return false
+    end
+
+    var pieza = Tablero[x_orig][y_orig].pieza
+    var valido = false
+
+    switch (pieza)
+        case PEON: valido = validar_peon(x_orig, y_orig, x_dest, y_dest, color)
+        case TORRE: valido = validar_torre(x_orig, y_orig, x_dest, y_dest)
+        case ALFIL: valido = validar_alfil(x_orig, y_orig, x_dest, y_dest)
+        case CABALLO: valido = validar_caballo(x_orig, y_orig, x_dest, y_dest)
+        case DAMA: valido = validar_dama(x_orig, y_orig, x_dest, y_dest)
+        case REY:
+            valido = validar_rey(x_orig, y_orig, x_dest, y_dest)
+            // If not a normal move, check castling
+            if (!valido and abs(x_dest - x_orig) == 2) then
+                valido = validar_enroque(x_orig, y_orig, x_dest, y_dest, color)
+            end
+    end
+
+    return valido
+end
+
+// Execute move on the board (basic version)
+func realizar_movimiento(x_orig, y_orig, x_dest, y_dest)
+    if (!validar_movimiento(x_orig, y_orig, x_dest, y_dest)) then
+        return false
+    end
+
+    var pieza = Tablero[x_orig][y_orig].pieza
+    var color = Tablero[x_orig][y_orig].color_pieza
+
+    // Update castling flags
+    if (pieza == REY) then
+        if (color == BLANCO) then
+            Estado.rey_blanco_movido = true
+        else
+            Estado.rey_negro_movido = true
+        end
+        // Execute castling if applicable
+        if (abs(x_dest - x_orig) == 2) then
+            var fila = y_orig
+            if (x_dest == 6) then  // Kingside castling
+                Tablero[5][fila].pieza = TORRE
+                Tablero[5][fila].color_pieza = color
+                Tablero[7][fila].pieza = NINGUNA
+                Tablero[7][fila].color_pieza = NINGUNO
+            else  // Queenside castling
+                Tablero[3][fila].pieza = TORRE
+                Tablero[3][fila].color_pieza = color
+                Tablero[0][fila].pieza = NINGUNA
+                Tablero[0][fila].color_pieza = NINGUNO
+            end
+        end
+    end
+
+    if (pieza == TORRE) then
+        if (x_orig == 0 and y_orig == 7) then Estado.torre_a1_movida = true end
+        if (x_orig == 7 and y_orig == 7) then Estado.torre_h1_movida = true end
+        if (x_orig == 0 and y_orig == 0) then Estado.torre_a8_movida = true end
+        if (x_orig == 7 and y_orig == 0) then Estado.torre_h8_movida = true end
+    end
+
+    // En passant
+    if (pieza == PEON and x_orig != x_dest and Tablero[x_dest][y_dest].pieza == NINGUNA) then
+        Tablero[x_dest][y_orig].pieza = NINGUNA
+        Tablero[x_dest][y_orig].color_pieza = NINGUNO
+    end
+
+    // Store en passant info for opponent
+    if (pieza == PEON and abs(y_dest - y_orig) == 2) then
+        Estado.peon_doble_x = x_dest
+        Estado.peon_doble_y = y_dest
+    else
+        Estado.peon_doble_x = -1
+        Estado.peon_doble_y = -1
+    end
+
+    // Execute the move
+    Tablero[x_dest][y_dest].pieza = pieza
+    Tablero[x_dest][y_dest].color_pieza = color
+    Tablero[x_orig][y_orig].pieza = NINGUNA
+    Tablero[x_orig][y_orig].color_pieza = NINGUNO
+
+    // Pawn promotion (always to queen for simplicity)
+    if (pieza == PEON) then
+        if ((color == BLANCO and y_dest == 0) or (color == NEGRO and y_dest == 7)) then
+            Tablero[x_dest][y_dest].pieza = DAMA
+        end
+    end
+
+    Estado.movimientos++
+    Estado.turno = (Estado.turno == BLANCO) ? NEGRO : BLANCO
+
+    return true
+end
+

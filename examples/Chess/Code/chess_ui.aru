@@ -1,0 +1,285 @@
+/********************************************************
+ * Chess Game - Graphical Interface
+ ********************************************************/
+use Display, Bitmap
+import "chess_types"
+import "chess_init"
+
+// Board cell area position and size in Tablero.bmp
+// Adjust these values according to the background image
+const TABLERO_X = 23
+const TABLERO_Y = 24
+const CASILLA_SIZE = 26
+const INFO_X = 255
+
+// Text colors
+const COL_INFO = 0x000080
+const COL_TEXTO = 0x000000
+const COL_ALERTA = 0x8B0000
+
+// Display variables
+var draw = nil
+var img_fondo = nil
+var jaque_activo = false
+var jaque_color = 0
+var ultimo_mov_texto = ""
+
+// White piece images
+var img_bp = nil
+var img_ba = nil
+var img_bc = nil
+var img_bt = nil
+var img_bd = nil
+var img_br = nil
+
+// Black piece images
+var img_np = nil
+var img_na = nil
+var img_nc = nil
+var img_nt = nil
+var img_nd = nil
+var img_nr = nil
+
+// Initialize screen and load resources
+func iniciar_pantalla()
+    Display.viewWidth = 320
+    Display.viewHeight = 240
+    Display.open(320, 240)
+    Display.orientation(0)
+    Display.mode(0)
+    Display.autoClear = false
+    draw = Display.draw
+
+    img_fondo = Bitmap.load("Images/Tablero.bmp")
+
+    img_bp = Bitmap.load("Images/B_P.bmp")
+    img_ba = Bitmap.load("Images/B_A.bmp")
+    img_bc = Bitmap.load("Images/B_C.bmp")
+    img_bt = Bitmap.load("Images/B_T.bmp")
+    img_bd = Bitmap.load("Images/B_D.bmp")
+    img_br = Bitmap.load("Images/B_R.bmp")
+
+    img_np = Bitmap.load("Images/N_P.bmp")
+    img_na = Bitmap.load("Images/N_A.bmp")
+    img_nc = Bitmap.load("Images/N_C.bmp")
+    img_nt = Bitmap.load("Images/N_T.bmp")
+    img_nd = Bitmap.load("Images/N_D.bmp")
+    img_nr = Bitmap.load("Images/N_R.bmp")
+end
+
+// Returns image for a given piece and color
+func obtener_imagen(pieza, color)
+    if (color == BLANCO) then
+        switch (pieza)
+            case PEON: return img_bp
+            case ALFIL: return img_ba
+            case CABALLO: return img_bc
+            case TORRE: return img_bt
+            case DAMA: return img_bd
+            case REY: return img_br
+        end
+    else
+        switch (pieza)
+            case PEON: return img_np
+            case ALFIL: return img_na
+            case CABALLO: return img_nc
+            case TORRE: return img_nt
+            case DAMA: return img_nd
+            case REY: return img_nr
+        end
+    end
+    return nil
+end
+
+// Draw all pieces on the board
+func dibujar_piezas()
+    for (var x = 0; x < 8; x++)
+        for (var y = 0; y < 8; y++)
+            var pieza = Tablero[x][y].pieza
+            if (pieza == NINGUNA) then
+                continue
+            end
+            var color = Tablero[x][y].color_pieza
+            var img = obtener_imagen(pieza, color)
+            if (img != nil) then
+                var ancho = 20
+                if (pieza == PEON) then
+                    ancho = 18
+                end
+                var px = TABLERO_X + x * CASILLA_SIZE + (CASILLA_SIZE - ancho) / 2
+                var py = TABLERO_Y + y * CASILLA_SIZE + (CASILLA_SIZE - ancho) / 2
+                draw.bitmap(px, py, img)
+            end
+        end
+    end
+end
+
+// Draw game info on side panel
+func dibujar_info(mensaje)
+    var turno_txt = (Estado.turno == BLANCO) ? "WHT" : "BLK"
+    draw.text(INFO_X, 20, "Turn:", COL_INFO)
+    draw.text(INFO_X, 34, turno_txt, COL_TEXTO)
+    draw.text(INFO_X, 56, "Move:", COL_INFO)
+    var auxEstado=Estado.movimientos + 1
+    draw.text(INFO_X, 70, auxEstado.toString(), COL_TEXTO)
+
+    if (ultimo_mov_texto != "") then
+        draw.text(INFO_X, 92, "Last:", COL_INFO)
+        draw.text(INFO_X, 106, ultimo_mov_texto, COL_TEXTO)
+    end
+
+    if (mensaje != nil and mensaje != "") then
+        draw.text(INFO_X, 128, mensaje, COL_ALERTA)
+    end
+end
+
+// Draw orange square under king in check
+func dibujar_jaque()
+    if (jaque_activo) then
+        var rx = (jaque_color == BLANCO) ? Estado.rey_blanco_x : Estado.rey_negro_x
+        var ry = (jaque_color == BLANCO) ? Estado.rey_blanco_y : Estado.rey_negro_y
+        var px = TABLERO_X + rx * CASILLA_SIZE
+        var py = TABLERO_Y + ry * CASILLA_SIZE
+        draw.color = 0xFF8C00
+        draw.rect(px, py, CASILLA_SIZE, CASILLA_SIZE, true)
+    end
+end
+
+// Draw full game: background + pieces + info
+func dibujar_partida(mensaje)
+    draw.bitmap(0, 0, img_fondo)
+    dibujar_jaque()
+    dibujar_piezas()
+    dibujar_info(mensaje)
+    Display.update()
+end
+
+// Checkmate animation: red blink 2s + fixed 3s
+func animar_mate(color_rey)
+    var rx = (color_rey == BLANCO) ? Estado.rey_blanco_x : Estado.rey_negro_x
+    var ry = (color_rey == BLANCO) ? Estado.rey_blanco_y : Estado.rey_negro_y
+    var px = TABLERO_X + rx * CASILLA_SIZE
+    var py = TABLERO_Y + ry * CASILLA_SIZE
+
+    for (var i = 0; i < 5; i++)
+        draw.bitmap(0, 0, img_fondo)
+        draw.color = 0xFF0000
+        draw.rect(px, py, CASILLA_SIZE, CASILLA_SIZE, true)
+        dibujar_piezas()
+        dibujar_info("MATE!")
+        Display.update()
+        pause(200)
+
+        draw.bitmap(0, 0, img_fondo)
+        dibujar_piezas()
+        dibujar_info("MATE!")
+        Display.update()
+        pause(200)
+    end
+
+    draw.bitmap(0, 0, img_fondo)
+    draw.color = 0xFF0000
+    draw.rect(px, py, CASILLA_SIZE, CASILLA_SIZE, true)
+    dibujar_piezas()
+    dibujar_info("MATE!")
+    Display.update()
+    pause(3000)
+end
+
+// Check animation: orange blink then stays fixed
+func animar_jaque(color_rey)
+    jaque_activo = true
+    jaque_color = color_rey
+    var rx = (color_rey == BLANCO) ? Estado.rey_blanco_x : Estado.rey_negro_x
+    var ry = (color_rey == BLANCO) ? Estado.rey_blanco_y : Estado.rey_negro_y
+    var px = TABLERO_X + rx * CASILLA_SIZE
+    var py = TABLERO_Y + ry * CASILLA_SIZE
+
+    for (var i = 0; i < 5; i++)
+        draw.bitmap(0, 0, img_fondo)
+        draw.color = 0xFF8C00
+        draw.rect(px, py, CASILLA_SIZE, CASILLA_SIZE, true)
+        dibujar_piezas()
+        dibujar_info("CHECK!")
+        Display.update()
+        pause(200)
+
+        draw.bitmap(0, 0, img_fondo)
+        dibujar_piezas()
+        dibujar_info("CHECK!")
+        Display.update()
+        pause(200)
+    end
+end
+
+// Full capture animation
+func animar_captura(x0, y0, x1, y1)
+    var px0 = TABLERO_X + x0 * CASILLA_SIZE
+    var py0 = TABLERO_Y + y0 * CASILLA_SIZE
+    var px1 = TABLERO_X + x1 * CASILLA_SIZE
+    var py1 = TABLERO_Y + y1 * CASILLA_SIZE
+
+    // Phase 1: green blink on attacker (2 seconds)
+    for (var i = 0; i < 5; i++)
+        draw.bitmap(0, 0, img_fondo)
+        dibujar_jaque()
+        draw.color = 0x00FF00
+        draw.rect(px0, py0, CASILLA_SIZE, CASILLA_SIZE, true)
+        dibujar_piezas()
+        Display.update()
+        pause(200)
+
+        draw.bitmap(0, 0, img_fondo)
+        dibujar_jaque()
+        dibujar_piezas()
+        Display.update()
+        pause(200)
+    end
+
+    // Phase 2: fixed green on attacker + red blink on victim (2 seconds)
+    for (var i = 0; i < 5; i++)
+        draw.bitmap(0, 0, img_fondo)
+        dibujar_jaque()
+        draw.color = 0x00FF00
+        draw.rect(px0, py0, CASILLA_SIZE, CASILLA_SIZE, true)
+        draw.color = 0xFF0000
+        draw.rect(px1, py1, CASILLA_SIZE, CASILLA_SIZE, true)
+        dibujar_piezas()
+        Display.update()
+        pause(200)
+
+        draw.bitmap(0, 0, img_fondo)
+        dibujar_jaque()
+        draw.color = 0x00FF00
+        draw.rect(px0, py0, CASILLA_SIZE, CASILLA_SIZE, true)
+        dibujar_piezas()
+        Display.update()
+        pause(200)
+    end
+
+    // Phase 3: fixed green + red (1 second)
+    draw.bitmap(0, 0, img_fondo)
+    dibujar_jaque()
+    draw.color = 0x00FF00
+    draw.rect(px0, py0, CASILLA_SIZE, CASILLA_SIZE, true)
+    draw.color = 0xFF0000
+    draw.rect(px1, py1, CASILLA_SIZE, CASILLA_SIZE, true)
+    dibujar_piezas()
+    Display.update()
+    pause(1000)
+end
+
+// Post-move animation: fixed blue on destination (2 seconds)
+func animar_destino(x1, y1)
+    var px1 = TABLERO_X + x1 * CASILLA_SIZE
+    var py1 = TABLERO_Y + y1 * CASILLA_SIZE
+
+    draw.bitmap(0, 0, img_fondo)
+    dibujar_jaque()
+    draw.color = 0x0000FF
+    draw.rect(px1, py1, CASILLA_SIZE, CASILLA_SIZE, true)
+    dibujar_piezas()
+    Display.update()
+    pause(2000)
+end
+
