@@ -1,0 +1,208 @@
+// Buzzer
+// Created: 2025-11-20
+// Author: Jon Otero
+// Version: 1.0.0
+// Description:
+// Buzzer Test
+
+// Your code here
+println('Hello World from Buzzer');
+// ==========================================
+// Configuration
+// ==========================================
+// CHANGE THIS NUMBER to your pin (e.g. 4 or 45)
+const BUZZER_PIN=45
+
+// ==========================================
+// Definition of Notes (Frequencies in Hz)
+// ==========================================
+var c   = 262 // Do
+var d   = 294 // Re
+var e   = 330 // Mi
+var f   = 349 // Fa
+var g   = 392 // Sol
+var gS  = 415 // Sol#
+var a   = 440 // La
+var b   = 466 // La#
+
+var cH  = 523 // Do (Alto)
+var cSH = 554 // Do#
+var dH  = 587 // Re
+var dSH = 622 // Re#
+var eH  = 659 // Mi
+var fH  = 698 // Fa
+var fSH = 740 // Fa#
+var gH  = 784 // Sol
+var gSH = 831 // Sol#
+var aH  = 880 // La
+
+// ==========================================
+// The Imperial March
+// ==========================================
+println("Playing: Star Wars - Imperial March...")
+
+// --- Part 1 ---
+tone(BUZZER_PIN, a, 500)
+pause(500)
+tone(BUZZER_PIN, a, 500)
+pause(500)
+tone(BUZZER_PIN, a, 500)
+pause(500)
+
+tone(BUZZER_PIN, f, 350)
+pause(350)
+tone(BUZZER_PIN, cH, 150)
+pause(150)
+tone(BUZZER_PIN, a, 500)
+pause(500)
+tone(BUZZER_PIN, f, 350)
+pause(350)
+tone(BUZZER_PIN, cH, 150)
+pause(150)
+tone(BUZZER_PIN, a, 650)
+pause(650)
+
+pause(500)
+
+// --- Part 2 ---
+tone(BUZZER_PIN, eH, 500)
+pause(500)
+tone(BUZZER_PIN, eH, 500)
+pause(500)
+tone(BUZZER_PIN, eH, 500)
+pause(500)
+
+tone(BUZZER_PIN, fH, 350)
+pause(350)
+tone(BUZZER_PIN, cH, 150)
+pause(150)
+tone(BUZZER_PIN, gS, 500)
+pause(500)
+tone(BUZZER_PIN, f, 350)
+pause(350)
+tone(BUZZER_PIN, cH, 150)
+pause(150)
+tone(BUZZER_PIN, a, 650)
+pause(650)
+
+pause(500)
+
+// --- Part 3 ---
+tone(BUZZER_PIN, aH, 500)
+pause(500)
+tone(BUZZER_PIN, a, 300)
+pause(300)
+tone(BUZZER_PIN, a, 150)
+pause(150)
+tone(BUZZER_PIN, aH, 500)
+pause(500)
+
+tone(BUZZER_PIN, gSH, 325)
+pause(325)
+tone(BUZZER_PIN, gH, 175)
+pause(175)
+tone(BUZZER_PIN, fSH, 125)
+pause(125)
+tone(BUZZER_PIN, fH, 125)
+pause(125)
+tone(BUZZER_PIN, fSH, 250)
+pause(250)
+
+pause(325)
+
+tone(BUZZER_PIN, a, 250)
+pause(250)
+tone(BUZZER_PIN, dSH, 500)
+pause(500)
+tone(BUZZER_PIN, dH, 325)
+pause(325)
+tone(BUZZER_PIN, cSH, 175)
+pause(175)
+tone(BUZZER_PIN, cH, 125)
+pause(125)
+tone(BUZZER_PIN, b, 125)
+pause(125)
+tone(BUZZER_PIN, cH, 250)
+pause(250)
+
+pause(350)
+
+// --- Part 4 ---
+tone(BUZZER_PIN, f, 250)
+pause(250)
+tone(BUZZER_PIN, gS, 500)
+pause(500)
+tone(BUZZER_PIN, f, 350)
+pause(350)
+tone(BUZZER_PIN, a, 125)
+pause(125)
+tone(BUZZER_PIN, cH, 500)
+pause(500)
+tone(BUZZER_PIN, a, 375)
+pause(375)
+tone(BUZZER_PIN, cH, 125)
+pause(125)
+tone(BUZZER_PIN, eH, 650)
+pause(650)
+
+pause(500)
+
+// --- Repeat Part 3 ---
+tone(BUZZER_PIN, aH, 500)
+pause(500)
+tone(BUZZER_PIN, a, 300)
+pause(300)
+tone(BUZZER_PIN, a, 150)
+pause(150)
+tone(BUZZER_PIN, aH, 500)
+pause(500)
+
+tone(BUZZER_PIN, gSH, 325)
+pause(325)
+tone(BUZZER_PIN, gH, 175)
+pause(175)
+tone(BUZZER_PIN, fSH, 125)
+pause(125)
+tone(BUZZER_PIN, fH, 125)
+pause(125)
+tone(BUZZER_PIN, fSH, 250)
+pause(250)
+
+pause(325)
+
+tone(BUZZER_PIN, a, 250)
+pause(250)
+tone(BUZZER_PIN, dSH, 500)
+pause(500)
+tone(BUZZER_PIN, dH, 325)
+pause(325)
+tone(BUZZER_PIN, cSH, 175)
+pause(175)
+tone(BUZZER_PIN, cH, 125)
+pause(125)
+tone(BUZZER_PIN, b, 125)
+pause(125)
+tone(BUZZER_PIN, cH, 250)
+pause(250)
+
+pause(350)
+
+// --- End ---
+tone(BUZZER_PIN, f, 250)
+pause(250)
+tone(BUZZER_PIN, gS, 500)
+pause(500)
+tone(BUZZER_PIN, f, 375)
+pause(375)
+tone(BUZZER_PIN, cH, 125)
+pause(125)
+tone(BUZZER_PIN, a, 500)
+pause(500)
+tone(BUZZER_PIN, f, 375)
+pause(375)
+tone(BUZZER_PIN, cH, 125)
+pause(125)
+tone(BUZZER_PIN, a, 650)
+pause(650)
+
+println("End of the song.")
