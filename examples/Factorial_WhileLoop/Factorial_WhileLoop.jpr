@@ -1,0 +1,48 @@
+{
+  "mainfilename" : "Code\\Factorial_WhileLoop.aru",
+  "mainfileid" : 3,
+  "nodes" : [
+    {
+      "id" : 0,
+      "name" : "Code",
+      "filename" : "",
+      "filepathrelative" : "Code",
+      "filesize" : 0,
+      "nodetype" : 0,
+      "metadata" : {},
+      "children" : [
+        {
+          "id" : 3,
+          "name" : "Factorial_WhileLoop.aru",
+          "filename" : "Factorial_WhileLoop.aru",
+          "filepathrelative" : "Code\\Factorial_WhileLoop.aru",
+          "filesize" : 762,
+          "nodetype" : 1,
+          "metadata" : {
+            "IsASTDirty" : true
+          }
+        }
+      ]
+    },
+    {
+      "id" : 1,
+      "name" : "Images",
+      "filename" : "",
+      "filepathrelative" : "Images",
+      "filesize" : 0,
+      "nodetype" : 0,
+      "metadata" : {}
+    },
+    {
+      "id" : 2,
+      "name" : "Sprites",
+      "filename" : "",
+      "filepathrelative" : "Sprites",
+      "filesize" : 0,
+      "nodetype" : 0,
+      "metadata" : {}
+    }
+  ],
+  "projectname" : "Factorial_WhileLoop",
+  "description" : "Factorial Calculator with while loop"
+}

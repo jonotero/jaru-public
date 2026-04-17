@@ -1,0 +1,48 @@
+use LED
+use Math
+
+const WIDTH  = 8
+const HEIGHT = 8
+const NUM_LEDS = WIDTH * HEIGHT
+
+var strip = LED.new(17, NUM_LEDS)
+strip.setBrightness(255)
+
+func xy(x, y)
+    return y * WIDTH + x
+end
+
+var t = 0.0
+
+while (true)
+
+    for (var y = 0; y < HEIGHT; y++)
+        for (var x = 0; x < WIDTH; x++)
+
+            // Centered coordinates
+            var fx = x - 3.5
+            var fy = y - 3.5
+
+            // Distance to center
+            var d = Math.sqrt(fx*fx + fy*fy)
+
+            // Expanding wave
+            var v = Math.sin(d * 2.0 - t)
+
+            // Convert to brightness 0..255
+            var brightness = Math.floor((v + 1) * 127.5)
+
+            // Blue color with variable brightness
+            strip.setPixel(xy(x,y), 0, 0, brightness)
+
+        end
+    end
+
+    strip.show()
+
+    pause(40)
+
+    t = t + 0.25
+
+end
+

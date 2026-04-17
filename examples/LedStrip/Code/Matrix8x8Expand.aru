@@ -1,0 +1,74 @@
+use LED
+
+const WIDTH  = 8
+const HEIGHT = 8
+
+func xy(x, y)
+    return y * WIDTH + x
+end
+
+func pixel(strip, x, y, r, g, b)
+    if (x < 0 or x >= WIDTH or y < 0 or y >= HEIGHT) then
+        return
+    end
+
+    strip.setPixel(xy(x, y), r, g, b)
+end
+
+func cls(strip)
+    strip.clear()
+end
+
+func abs(v)
+    if (v < 0) then
+        return -v
+    end
+    return v
+end
+
+func drawBurst(strip, radius, r, g, b)
+    var cx = 3
+    var cy = 3
+
+    for (var y = 0; y < HEIGHT; y++)
+        for (var x = 0; x < WIDTH; x++)
+            var dx = abs(x - cx)
+            var dy = abs(y - cy)
+
+            if ((dx == radius and dy <= radius) or (dy == radius and dx <= radius)) then
+                pixel(strip, x, y, r, g, b)
+            end
+        end
+    end
+end
+
+var strip = LED.new(17, 64)
+strip.setBrightness(128)
+
+while (true)
+    cls(strip)
+    drawBurst(strip, 0, 120, 120, 120)
+    strip.show()
+    pause(120)
+
+    cls(strip)
+    drawBurst(strip, 1, 120, 0, 0)
+    strip.show()
+    pause(120)
+
+    cls(strip)
+    drawBurst(strip, 2, 120, 60, 0)
+    strip.show()
+    pause(120)
+
+    cls(strip)
+    drawBurst(strip, 3, 120, 120, 0)
+    strip.show()
+    pause(120)
+
+    cls(strip)
+    drawBurst(strip, 4, 0, 80, 120)
+    strip.show()
+    pause(180)
+end
+

@@ -1,0 +1,12 @@
+{
+  "pins" : [
+    {
+      "gpio" : 17,
+      "connectedTo" : "WS2812 Strip"
+    },
+    {
+      "gpio" : 19,
+      "connectedTo" : "Signal generator"
+    }
+  ]
+}
