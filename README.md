@@ -77,6 +77,14 @@ The documentation includes language guides, tutorials, and reference material to
 
 ---
 
+## 🎥 Demos & Videos
+
+You can see JARU running on real hardware and explore various demos  on the official YouTube channel:
+
+👉 https://www.youtube.com/@JaruLang
+
+---
+
 ## 🤝 Contributing
 
 This repository is meant to be **open and welcoming**. You are encouraged to:
