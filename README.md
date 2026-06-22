@@ -27,6 +27,30 @@ The IDE itself is **not open source**, but this repository provides a public spa
 
 ---
 
+## Community and feedback
+
+Have questions, ideas or feedback about JARU?
+
+Use **GitHub Discussions** for general questions, ideas, examples, ESP32 hardware topics and community feedback.
+
+Use **GitHub Issues** only for reproducible bugs, clear problems or concrete tasks that need to be tracked.
+
+Start here:
+
+* Ask a question in Q&A
+* Share a demo in Examples & Demos
+* Suggest an idea in Ideas & Feature Requests
+* Follow releases and announcements in Announcements
+
+Useful links:
+
+* Official website: https://jarulang.com/en/
+* Documentation: https://jarulang.com/en/docs/
+* Blog: https://jarulang.com/en/blog/
+* Releases: https://github.com/jonotero/jaru-public/releases
+
+---
+
 ## 📂 What does this repository contain?
 
 ### 📌 `examples/`
@@ -84,29 +108,7 @@ You can see JARU running on real hardware and explore various demos  on the offi
 👉 https://www.youtube.com/@JaruLang
 
 ---
-## Community and feedback
 
-Have questions, ideas or feedback about JARU?
-
-Use **GitHub Discussions** for general questions, ideas, examples, ESP32 hardware topics and community feedback.
-
-Use **GitHub Issues** only for reproducible bugs, clear problems or concrete tasks that need to be tracked.
-
-Start here:
-
-* Ask a question in Q&A
-* Share a demo in Examples & Demos
-* Suggest an idea in Ideas & Feature Requests
-* Follow releases and announcements in Announcements
-
-Useful links:
-
-* Official website: https://jarulang.com/en/
-* Documentation: https://jarulang.com/en/docs/
-* Blog: https://jarulang.com/en/blog/
-* Releases: https://github.com/jonotero/jaru-public/releases
-
----
 ## 🤝 Contributing
 
 This repository is meant to be **open and welcoming**. You are encouraged to:
