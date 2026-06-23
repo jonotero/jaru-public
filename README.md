@@ -20,7 +20,7 @@ Key characteristics include:
 - Built-in support for GPIO, Wi-Fi, MQTT, and more  
 
 More information and official documentation are available at:  
-👉 https://jarulang.com
+👉 https://jarulang.com/en/
 
 In addition to the language, JARU includes a **full-featured IDE** with visual debugging, intelligent autocompletion, and one-click deployment.  
 The IDE itself is **not open source**, but this repository provides a public space for collaboration and feedback.
