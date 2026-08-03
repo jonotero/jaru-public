@@ -21,7 +21,7 @@ func cls(strip)
 end
 
 func drawDrop(strip, x, headY, len1)
-    // head: light green, not pure white
+    // cabeza: verde claro, no blanco puro
     pixel(strip, x, headY, 180, 255, 180)
 
     if (len1 >= 1) then
@@ -56,17 +56,17 @@ end
 var strip = LED.new(17, 64)
 strip.setBrightness(255)
 
-// Initialize RNG
+// Inicializar RNG bueno
 randomize(clock())
 
-// State arrays
+// Arrays de estado
 var xs     = [0, 0, 0, 0]
 var heads  = [0, 0, 0, 0]
 var lens   = [0, 0, 0, 0]
 var speeds = [0, 0, 0, 0]
 var timers = [0, 0, 0, 0]
 
-// Initial spawn
+// Spawn inicial
 for (var i = 0; i < DROPS; i++)
     respawnColumn(i, xs, heads, lens, speeds, timers)
 end
@@ -75,7 +75,7 @@ while (true)
 
     cls(strip)
 
-    // Draw columns
+    // Dibujar columnas
     for (var i = 0; i < DROPS; i++)
         drawDrop(strip, xs[i], heads[i], lens[i])
     end
@@ -83,7 +83,7 @@ while (true)
     strip.show()
     pause(90)
 
-    // Update movement
+    // Actualizar movimiento
     for (var i = 0; i < DROPS; i++)
         timers[i] = timers[i] + 1
 
@@ -92,7 +92,7 @@ while (true)
             timers[i] = 0
         end
 
-        // If fully off the bottom, respawn
+        // Si salió completamente por abajo, reaparece
         if (heads[i] - lens[i] > HEIGHT + random(0, 2)) then
             respawnColumn(i, xs, heads, lens, speeds, timers)
         end

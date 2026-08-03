@@ -3,28 +3,31 @@
 // Author: Jon Otero
 // Version: 1.0.0
 
-// Checks whether a number is prime
+// Comprobador de si un número es primo
 
-println("Enter a number to check if it is prime:")
+println("Introduce un número para comprobar si es primo:")
 var entrada = readLine()
-var numero = entrada.toInt()
+var numero = entrada.toInt() // Convierte la entrada a un número entero
 var esPrimo = true
 
-// Numbers less than or equal to 1 are not prime
+// Los números menores o iguales a 1 no son primos
 if (numero <= 1) then
     esPrimo = false
 else
-    // Check divisibility from 2 up to half the number
+    // Se comprueba la divisibilidad desde 2 hasta la mitad del número.
+    // No es necesario comprobar más allá de la mitad.
     for (var i = 2; i <= numero / 2; i++)
+        // Si el número es divisible por cualquier otro número, no es primo
         if (numero mod i == 0) then
             esPrimo = false
-            break
+            break // Si se encuentra un divisor, se puede salir del bucle
         end
     end
 end
 
+// Muestra el resultado final
 if (esPrimo) then
-    println(numero, " is a prime number.")
+    println(numero, " es un número primo.")
 else
-    println(numero, " is not a prime number.")
+    println(numero, " no es un número primo.")
 end

@@ -1,30 +1,30 @@
 /********************************************************
- * Chess Game - Graphical Interface
+ * Juego de Ajedrez - Interfaz Grafica (ESP32/Windows)
  ********************************************************/
 use Display, Bitmap
 import "chess_types"
 import "chess_init"
 
-// Board cell area position and size in Tablero.bmp
-// Adjust these values according to the background image
+// Posicion y tamano del area de casillas en Tablero.bmp
+// Ajustar estos valores segun la imagen de fondo
 const TABLERO_X = 23
 const TABLERO_Y = 24
 const CASILLA_SIZE = 26
 const INFO_X = 255
 
-// Text colors
+// Colores para texto
 const COL_INFO = 0x000080
 const COL_TEXTO = 0x000000
 const COL_ALERTA = 0x8B0000
 
-// Display variables
+// Variables de display
 var draw = nil
 var img_fondo = nil
 var jaque_activo = false
 var jaque_color = 0
 var ultimo_mov_texto = ""
 
-// White piece images
+// Imagenes de piezas blancas
 var img_bp = nil
 var img_ba = nil
 var img_bc = nil
@@ -32,7 +32,7 @@ var img_bt = nil
 var img_bd = nil
 var img_br = nil
 
-// Black piece images
+// Imagenes de piezas negras
 var img_np = nil
 var img_na = nil
 var img_nc = nil
@@ -40,7 +40,7 @@ var img_nt = nil
 var img_nd = nil
 var img_nr = nil
 
-// Initialize screen and load resources
+// Inicializa la pantalla y carga recursos
 func iniciar_pantalla()
     Display.viewWidth = 320
     Display.viewHeight = 240
@@ -67,7 +67,7 @@ func iniciar_pantalla()
     img_nr = Bitmap.load("Images/N_R.bmp")
 end
 
-// Returns image for a given piece and color
+// Obtiene la imagen correspondiente a una pieza y color
 func obtener_imagen(pieza, color)
     if (color == BLANCO) then
         switch (pieza)
@@ -91,7 +91,7 @@ func obtener_imagen(pieza, color)
     return nil
 end
 
-// Draw all pieces on the board
+// Dibuja todas las piezas sobre el tablero
 func dibujar_piezas()
     for (var x = 0; x < 8; x++)
         for (var y = 0; y < 8; y++)
@@ -114,7 +114,7 @@ func dibujar_piezas()
     end
 end
 
-// Draw game info on side panel
+// Dibuja informacion del juego en el panel lateral
 func dibujar_info(mensaje)
     var turno_txt = (Estado.turno == BLANCO) ? "WHT" : "BLK"
     draw.text(INFO_X, 20, "Turn:", COL_INFO)
@@ -133,7 +133,7 @@ func dibujar_info(mensaje)
     end
 end
 
-// Draw orange square under king in check
+// Dibuja cuadrado naranja debajo del rey en jaque
 func dibujar_jaque()
     if (jaque_activo) then
         var rx = (jaque_color == BLANCO) ? Estado.rey_blanco_x : Estado.rey_negro_x
@@ -145,7 +145,7 @@ func dibujar_jaque()
     end
 end
 
-// Draw full game: background + pieces + info
+// Dibuja la partida completa: fondo + piezas + info
 func dibujar_partida(mensaje)
     draw.bitmap(0, 0, img_fondo)
     dibujar_jaque()
@@ -154,7 +154,7 @@ func dibujar_partida(mensaje)
     Display.update()
 end
 
-// Checkmate animation: red blink 2s + fixed 3s
+// Animacion de jaque mate: parpadeo rojo 2s + fijo 3s
 func animar_mate(color_rey)
     var rx = (color_rey == BLANCO) ? Estado.rey_blanco_x : Estado.rey_negro_x
     var ry = (color_rey == BLANCO) ? Estado.rey_blanco_y : Estado.rey_negro_y
@@ -186,7 +186,7 @@ func animar_mate(color_rey)
     pause(3000)
 end
 
-// Check animation: orange blink then stays fixed
+// Animacion de jaque: parpadeo naranja y luego queda fijo
 func animar_jaque(color_rey)
     jaque_activo = true
     jaque_color = color_rey
@@ -212,14 +212,14 @@ func animar_jaque(color_rey)
     end
 end
 
-// Full capture animation
+// Animacion de captura completa
 func animar_captura(x0, y0, x1, y1)
     var px0 = TABLERO_X + x0 * CASILLA_SIZE
     var py0 = TABLERO_Y + y0 * CASILLA_SIZE
     var px1 = TABLERO_X + x1 * CASILLA_SIZE
     var py1 = TABLERO_Y + y1 * CASILLA_SIZE
 
-    // Phase 1: green blink on attacker (2 seconds)
+    // Fase 1: parpadeo verde en atacante (2 segundos)
     for (var i = 0; i < 5; i++)
         draw.bitmap(0, 0, img_fondo)
         dibujar_jaque()
@@ -236,7 +236,7 @@ func animar_captura(x0, y0, x1, y1)
         pause(200)
     end
 
-    // Phase 2: fixed green on attacker + red blink on victim (2 seconds)
+    // Fase 2: verde fijo en atacante + parpadeo rojo en victima (2 segundos)
     for (var i = 0; i < 5; i++)
         draw.bitmap(0, 0, img_fondo)
         dibujar_jaque()
@@ -257,7 +257,7 @@ func animar_captura(x0, y0, x1, y1)
         pause(200)
     end
 
-    // Phase 3: fixed green + red (1 second)
+    // Fase 3: verde + rojo fijos (1 segundo)
     draw.bitmap(0, 0, img_fondo)
     dibujar_jaque()
     draw.color = 0x00FF00
@@ -269,7 +269,7 @@ func animar_captura(x0, y0, x1, y1)
     pause(1000)
 end
 
-// Post-move animation: fixed blue on destination (2 seconds)
+// Animacion post-movimiento: azul fijo en destino (2 segundos)
 func animar_destino(x1, y1)
     var px1 = TABLERO_X + x1 * CASILLA_SIZE
     var py1 = TABLERO_Y + y1 * CASILLA_SIZE

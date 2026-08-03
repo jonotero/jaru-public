@@ -2,7 +2,7 @@
 // Created: 2025-11-19
 // Author: Jon Otero
 // Version: 1.0.0
-// Description: MAX30102 driver for JARU
+// Description: DRIVER MAX30102 PARA JARU
 
 use I2C
 
@@ -13,62 +13,68 @@ class MAX30102
         this.port = i2c_port;
         this.addr = 87; // 0x57
 
-        // 1. Reset sensor
+        // 1. Resetear sensor
         this.write(0x09, 0x40);
+        // Pequeña espera para el reset (simulada con loop si no hay sleep)
 
-        // 2. Interrupt config (Enable New FIFO Data Ready)
+        // 2. Configuración de Interrupciones (Enable New FIFO Data Ready)
         this.write(0x02, 0xC0);
         this.write(0x03, 0x00);
 
-        // 3. FIFO config (Average 4 samples, Roll-over enable)
+        // 3. Configuración FIFO (Average 4 samples, Roll-over enable)
         this.write(0x08, 0x10);
 
-        // 4. Mode config (SpO2 Mode: Red + IR)
+        // 4. Configuración de Modo (SpO2 Mode: Red + IR)
         this.write(0x09, 0x03);
 
-        // 5. SpO2 config (ADC Range 4096nA, 100Hz, PulseWidth 411us)
+        // 5. Configuración SpO2 (ADC Range 4096nA, 100Hz, PulseWidth 411us)
         this.write(0x0A, 0x27);
 
-        // 6. LED power (approx 6.4mA - enough to detect finger)
+        // 6. Potencia de los LEDs (aprox 6.4mA - Suficiente para detectar dedo)
+        // Si se pone muy alto consume mucha batería, si muy bajo no lee bien.
         this.write(0x0C, 0x1F); // LED1 (Red)
         this.write(0x0D, 0x1F); // LED2 (IR)
 
-        // 7. Clear FIFO pointers
+        // 7. Limpiar punteros FIFO
         this.write(0x04, 0x00); // Write ptr
         this.write(0x06, 0x00); // Read ptr
         this.write(0x05, 0x00); // Overflow
 
-        println("[MAX30102] Driver started..");
+        println("[MAX30102] Driver Iniciado..");
     end
 
-    // Write register
+    // Escribir en registro
     def write(reg, val)
         I2C.writeReg(this.port, this.addr, reg, val);
     end
 
-    // Read 1-byte register
+    // Leer registro de 1 byte
     def read(reg)
         return I2C.readReg(this.port, this.addr, reg);
     end
 
-    // Read raw sensor data (Red, IR) — returns [Red, IR] or nil
+    // Leer datos raw del sensor (Red, IR)
+    // Devuelve una lista [Red, IR] o nil si no hay datos nuevos
     def readSensor()
-        // Read write and read pointers
+        // Leer punteros de escritura y lectura
         var ptrWrite = this.read(0x04);
         var ptrRead = this.read(0x06);
 
-        // Equal pointers means no new data
+        // Si los punteros son iguales, no hay datos nuevos
         if (ptrWrite == ptrRead) then return nil; end;
 
+        // Leer 6 bytes del registro FIFO_DATA (0x07)
+        // Usamos transfer para escribir 0x07 y leer 6 bytes seguidos
+        // Formato: [R_MSB, R_Mid, R_LSB, IR_MSB, IR_Mid, IR_LSB]
         var bytes = I2C.transfer(this.port, this.addr, [0x07], 6);
 
         if (len(bytes) == 6) then
-            // Convert 3 bytes to integer (Red)
+            // Convertir 3 bytes a entero (Red)
             var red = (bytes[0] * 65536) + (bytes[1] * 256) + bytes[2];
-            // Mask junk bits (18 effective bits)
-            red = red & 0x03FFFF;
+            // Máscara para quitar bits basura (18 bits efectivos)
+            red = red & 0x03FFFF; // (Opcional si JARU maneja bien enteros grandes)
 
-            // Convert 3 bytes to integer (IR)
+            // Convertir 3 bytes a entero (IR)
             var ir = (bytes[3] * 65536) + (bytes[4] * 256) + bytes[5];
             ir = ir & 0x03FFFF;
 

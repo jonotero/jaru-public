@@ -112,7 +112,7 @@ var anim = 0
 while (true)
 
     // -------------------------------------------------
-    // 1) Arcade intro
+    // 1) Entrada arcade
     // -------------------------------------------------
     for (var i = 0; i < 3; i++)
         flash(strip, 120, 120, 120, 50)
@@ -120,7 +120,7 @@ while (true)
     end
 
     // -------------------------------------------------
-    // 2) Moving enemy
+    // 2) Enemigo moviéndose
     // -------------------------------------------------
     for (var enemyX = 1; enemyX <= 6; enemyX++)
         cls(strip)
@@ -145,7 +145,7 @@ while (true)
     end
 
     // -------------------------------------------------
-    // 3) New enemy pass + player shot
+    // 3) Nuevo pase enemigo + disparo del jugador
     // -------------------------------------------------
     for (var enemyX = 1; enemyX <= 6; enemyX++)
         var fireNow = false
@@ -175,7 +175,7 @@ while (true)
                 anim = anim + 1
             end
 
-            // Impact
+            // Impacto
             for (var e = 0; e < 4; e++)
                 cls(strip)
                 drawStars(strip, starFrame)
@@ -190,7 +190,7 @@ while (true)
             flash(strip, 120, 40, 0, 50)
             flash(strip, 0, 0, 0, 40)
 
-            // Player celebration
+            // Celebración jugador
             for (var c = 0; c < 4; c++)
                 cls(strip)
                 drawStars(strip, starFrame)
@@ -223,7 +223,7 @@ while (true)
     end
 
     // -------------------------------------------------
-    // 4) Simple final boss
+    // 4) Jefe final simple
     // -------------------------------------------------
     for (var bossPhase = 0; bossPhase < 8; bossPhase++)
         cls(strip)
@@ -260,7 +260,7 @@ while (true)
     end
 
     // -------------------------------------------------
-    // 5) Big final explosion
+    // 5) Gran explosión final
     // -------------------------------------------------
     for (var e = 0; e < 4; e++)
         cls(strip)

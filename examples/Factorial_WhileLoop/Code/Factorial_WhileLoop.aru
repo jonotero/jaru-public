@@ -4,24 +4,25 @@
 // Version: 1.0.0
 
 
-// Factorial calculator using a while loop
+// Calculadora de Factorial con bucle while
 
-println("Enter a number to calculate its factorial:")
-var numero = 7
+// Solicita al usuario que introduzca un número
+println("Introduce un número para calcular su factorial:")
+var numero = 7 // Simula la entrada del usuario con el número 7
 var factorial = 1
 var i = 1
 
-// Check if the number is negative
+// Comprueba si el número es negativo
 if (numero < 0) then
-    println("Error: Factorial is not defined for negative numbers.")
+    println("Error: El factorial no está definido para números negativos.")
 elsif (numero == 0) then
-    println("The factorial of 0 is 1.")
+    println("El factorial de 0 es 1.")
 else
-    // Calculate the factorial using a while loop
+    // Calcula el factorial usando un bucle while
     while (i <= numero)
         factorial = factorial * i
         i++
     end
 
-    println("The factorial of ", numero, " is ", factorial)
+    println("El factorial de ", numero, " es ", factorial)
 end

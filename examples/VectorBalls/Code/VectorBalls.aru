@@ -7,9 +7,9 @@ use Display, Sprite, Math;
 var draw = Display.draw;
 var display = Display;
 
-const WIDTH = 320;
+const WIDTH = 480;
 // const WIDTH = 240;
-const HEIGHT = 240;
+const HEIGHT = 320;
 const NUMBALLS = 100
 const TWO_PI = PI * 2;
 var imgBall = Bitmap.load("Images/VecBallB.bmp")

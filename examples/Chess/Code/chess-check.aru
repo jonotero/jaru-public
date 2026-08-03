@@ -1,11 +1,11 @@
 /*********************************************************
-* Chess Game - Check Detection
+* Juego de Ajedrez - Detección de Jaque (Optimizado ESP32)
 **********************************************************/
 use Math
 import "chess_types"
 import "chess_moves"
 
-// Checks if piece at (x0,y0) can attack (x1,y1)
+// Verifica si una pieza en (x0,y0) puede atacar a (x1,y1)
 func puede_atacar(x0, y0, x1, y1)
     var pieza = Tablero[x0][y0].pieza
     var color = Tablero[x0][y0].color_pieza
@@ -16,7 +16,7 @@ func puede_atacar(x0, y0, x1, y1)
 
     switch (pieza)
         case PEON:
-            // Pawns attack diagonally
+            // Peones atacan en diagonal
             if (adx == 1) then
                 if (color == BLANCO and dy == -1) then return true end
                 if (color == NEGRO and dy == 1) then return true end
@@ -50,7 +50,7 @@ func puede_atacar(x0, y0, x1, y1)
     return false
 end
 
-// Checks clear path in straight line
+// Verifica camino libre en línea recta
 func camino_libre_recto(x0, y0, x1, y1)
     var dx = Math.sign(x1 - x0)
     var dy = Math.sign(y1 - y0)
@@ -67,7 +67,7 @@ func camino_libre_recto(x0, y0, x1, y1)
     return true
 end
 
-// Checks clear diagonal path
+// Verifica camino libre en diagonal
 func camino_libre_diagonal(x0, y0, x1, y1)
     var dx = Math.sign(x1 - x0)
     var dy = Math.sign(y1 - y0)
@@ -84,7 +84,7 @@ func camino_libre_diagonal(x0, y0, x1, y1)
     return true
 end
 
-// Checks if square is under attack by attacking color
+// Verifica si casilla está bajo ataque por color_atacante
 func casilla_bajo_ataque(x, y, color_atacante)
     for (var xi = 0; xi < 8; xi++)
         for (var yi = 0; yi < 8; yi++)
@@ -98,12 +98,12 @@ func casilla_bajo_ataque(x, y, color_atacante)
     return false
 end
 
-// Compatibility alias
+// Alias para compatibilidad
 func casilla_amenazada(x, y, color_atacante)
     return casilla_bajo_ataque(x, y, color_atacante)
 end
 
-// Returns king position (O(1) cache)
+// Encuentra la posición del rey (cache O(1))
 func encontrar_rey(color)
     if (color == BLANCO) then
         return [Estado.rey_blanco_x, Estado.rey_blanco_y]
@@ -112,7 +112,7 @@ func encontrar_rey(color)
     end
 end
 
-// Checks if a king is in check
+// Comprueba si un rey está en jaque
 func esta_en_jaque(color)
     var pos_rey = encontrar_rey(color)
     if (pos_rey == nil) then
@@ -122,15 +122,15 @@ func esta_en_jaque(color)
     return casilla_bajo_ataque(pos_rey[0], pos_rey[1], oponente)
 end
 
-// Simulates move and checks if it leaves king in check (no clone)
+// Simula movimiento y verifica si deja en jaque (OPTIMIZADO - sin clone)
 func movimiento_deja_en_jaque(x_orig, y_orig, x_dest, y_dest)
-    // Save minimal state
+    // Guardar valores mínimos necesarios
     var pieza_orig = Tablero[x_orig][y_orig].pieza
     var color_orig = Tablero[x_orig][y_orig].color_pieza
     var pieza_dest = Tablero[x_dest][y_dest].pieza
     var color_dest = Tablero[x_dest][y_dest].color_pieza
 
-    // En passant
+    // Para captura al paso
     var pieza_paso = NINGUNA
     var color_paso = NINGUNO
     var es_captura_paso = false
@@ -143,7 +143,7 @@ func movimiento_deja_en_jaque(x_orig, y_orig, x_dest, y_dest)
         Tablero[x_dest][y_orig].color_pieza = NINGUNO
     end
 
-    // Update king cache if moved
+    // Actualizar cache del rey si se mueve
     var rey_x_ant = -1
     var rey_y_ant = -1
     if (pieza_orig == REY) then
@@ -160,16 +160,16 @@ func movimiento_deja_en_jaque(x_orig, y_orig, x_dest, y_dest)
         end
     end
 
-    // Apply temporary move
+    // Realizar movimiento temporal
     Tablero[x_dest][y_dest].pieza = pieza_orig
     Tablero[x_dest][y_dest].color_pieza = color_orig
     Tablero[x_orig][y_orig].pieza = NINGUNA
     Tablero[x_orig][y_orig].color_pieza = NINGUNO
 
-    // Check for check
+    // Verificar jaque
     var en_jaque = esta_en_jaque(color_orig)
 
-    // Restore board
+    // Restaurar tablero
     Tablero[x_orig][y_orig].pieza = pieza_orig
     Tablero[x_orig][y_orig].color_pieza = color_orig
     Tablero[x_dest][y_dest].pieza = pieza_dest
@@ -180,7 +180,7 @@ func movimiento_deja_en_jaque(x_orig, y_orig, x_dest, y_dest)
         Tablero[x_dest][y_orig].color_pieza = color_paso
     end
 
-    // Restore king cache
+    // Restaurar cache del rey
     if (pieza_orig == REY) then
         if (color_orig == BLANCO) then
             Estado.rey_blanco_x = rey_x_ant
@@ -194,7 +194,7 @@ func movimiento_deja_en_jaque(x_orig, y_orig, x_dest, y_dest)
     return en_jaque
 end
 
-// Generate all legal moves
+// Generar todos los movimientos legales (OPTIMIZADO)
 func movimientos_legales(color)
     var lista = []
     for (var x0 = 0; x0 < 8; x0++)
@@ -215,7 +215,7 @@ func movimientos_legales(color)
     return lista
 end
 
-// Verify Checkmate
+// Verificar Jaque Mate
 func es_jaque_mate(color)
     if (!esta_en_jaque(color)) then
         return false
@@ -224,7 +224,7 @@ func es_jaque_mate(color)
     return (jugadas.size() == 0)
 end
 
-// Verify Stalemate
+// Verificar Ahogado (stalemate)
 func es_ahogado(color)
     if (esta_en_jaque(color)) then
         return false
@@ -233,7 +233,7 @@ func es_ahogado(color)
     return (jugadas.size() == 0)
 end
 
-// Execute move with check validation
+// Realizar movimiento seguro con verificación de jaque
 func realizar_movimiento_seguro(x_orig, y_orig, x_dest, y_dest)
     if (!validar_movimiento(x_orig, y_orig, x_dest, y_dest)) then
         return false
@@ -246,7 +246,7 @@ func realizar_movimiento_seguro(x_orig, y_orig, x_dest, y_dest)
     var pieza = Tablero[x_orig][y_orig].pieza
     var color = Tablero[x_orig][y_orig].color_pieza
 
-    // Update king cache and castling flags
+    // Actualizar cache posicion del rey y flags de enroque
     if (pieza == REY) then
         if (color == BLANCO) then
             Estado.rey_blanco_movido = true
@@ -257,7 +257,7 @@ func realizar_movimiento_seguro(x_orig, y_orig, x_dest, y_dest)
             Estado.rey_negro_x = x_dest
             Estado.rey_negro_y = y_dest
         end
-        // Execute castling
+        // Ejecutar enroque
         if (abs(x_dest - x_orig) == 2) then
             var fila = y_orig
             if (x_dest == 6) then
@@ -281,13 +281,13 @@ func realizar_movimiento_seguro(x_orig, y_orig, x_dest, y_dest)
         if (x_orig == 7 and y_orig == 0) then Estado.torre_h8_movida = true end
     end
 
-    // En passant
+    // Captura al paso
     if (pieza == PEON and x_orig != x_dest and Tablero[x_dest][y_dest].pieza == NINGUNA) then
         Tablero[x_dest][y_orig].pieza = NINGUNA
         Tablero[x_dest][y_orig].color_pieza = NINGUNO
     end
 
-    // Store en passant info
+    // Guardar info para captura al paso
     if (pieza == PEON and abs(y_dest - y_orig) == 2) then
         Estado.peon_doble_x = x_dest
         Estado.peon_doble_y = y_dest
@@ -296,13 +296,13 @@ func realizar_movimiento_seguro(x_orig, y_orig, x_dest, y_dest)
         Estado.peon_doble_y = -1
     end
 
-    // Execute move
+    // Realizar movimiento
     Tablero[x_dest][y_dest].pieza = pieza
     Tablero[x_dest][y_dest].color_pieza = color
     Tablero[x_orig][y_orig].pieza = NINGUNA
     Tablero[x_orig][y_orig].color_pieza = NINGUNO
 
-    // Promotion
+    // Promoción
     if (pieza == PEON) then
         if ((color == BLANCO and y_dest == 0) or (color == NEGRO and y_dest == 7)) then
             Tablero[x_dest][y_dest].pieza = DAMA

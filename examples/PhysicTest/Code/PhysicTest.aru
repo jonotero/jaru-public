@@ -1,22 +1,22 @@
-// PhysicTest v2.5 - Progressive circle generation
+// PhysicTest v2.5 - Generación progresiva de círculos
 use Display, Sprite, Math, Input, Scene
 
 var draw = Display.draw;
 
-// Debug settings
+// Configuración de depuración
 var DIBUJAR_COLLIDERS = false;
 var ROJO = 0xFF0000;
 var AMARILLO = 0xFFFF00;
 var VERDE = 0x00FF00;
 
-// Ball limit and spawn rate
+// Límite y ritmo de aparición de bolas
 const MAX_BOLAS = 40
 const INTERVALO_SPAWN = 0.75
 
 var bolas = []
 var totalBolas = 0
 
-// Helper function to draw a collider
+// Función auxiliar para pintar el collider
 func dibujarCollider(sprite, color)
     var c = sprite.collider
     var p = sprite.pivot
@@ -33,7 +33,7 @@ func InitScreen()
     Display.mode(2);
 end
 
-// Creates a dynamic ball and adds it to the scene
+// Crea una bola dinámica y la añade a la escena
 func crearBola(scene, x, y, velX, velY)
     var bola = Sprite.load("Sprites/spr01.spr")
     bola.pos = [x, y]
@@ -47,11 +47,11 @@ func crearBola(scene, x, y, velX, velY)
     totalBolas = totalBolas + 1
 end
 
-// 1. Create the Scene
+// 1. Crear la Escena
 var mainScene = Scene.new();
 mainScene.gravity = 400;
 
-// 2. Load and configure static / kinematic elements
+// 2. Carga y configuración de elementos estáticos / cinemáticos
 var suelo1      = Sprite.load("Sprites/sprSuelo.spr")
 var suelo2      = Sprite.load("Sprites/sprSuelo.spr")
 var suelo3      = Sprite.load("Sprites/sprSuelo.spr")
@@ -60,7 +60,7 @@ var muroIzq     = Sprite.load("Sprites/sprPared.spr")
 var muroDer     = Sprite.load("Sprites/sprPared.spr")
 var plataforma  = Sprite.load("Sprites/sprSuelo.spr")
 
-// Configure floors
+// Configurar Suelos
 var suelo_y = 220;
 var suelo_w = 96;
 var suelos = [suelo1, suelo2, suelo3, suelo4];
@@ -70,7 +70,7 @@ for (var i = 0; i < 4; i++)
     suelos[i].friction = 0.1;
 end
 
-// Configure walls
+// Configurar Muros
 muroIzq.pos = [0, 0];
 muroIzq.pivot = [10, 0];
 muroIzq.collider = [0, 0, 16, 240];
@@ -81,12 +81,12 @@ muroDer.pivot = [0, 0];
 muroDer.collider = [0, 0, 16, 240];
 muroDer.bodyType = Sprite.STATIC;
 
-// Configure platform
+// Configurar Plataforma
 plataforma.pos = [50, 150];
 plataforma.collider = [0, 0, 96, 32];
 plataforma.bodyType = Sprite.KINEMATIC;
 
-// 3. Add static elements to the scene
+// 3. Añadir elementos fijos a la escena
 mainScene.addSprite(suelo1);
 mainScene.addSprite(suelo2);
 mainScene.addSprite(suelo3);
@@ -95,7 +95,7 @@ mainScene.addSprite(muroIzq);
 mainScene.addSprite(muroDer);
 mainScene.addSprite(plataforma);
 
-// 4. Create the 2 initial balls
+// 4. Crear las 2 bolas iniciales
 crearBola(mainScene, 50, 50, 100, 50)
 crearBola(mainScene, 150, 80, 0, 0)
 
@@ -105,7 +105,7 @@ var lastTime = clock();
 var timer = 0.0;
 var spawnTimer = 0.0;
 
-// --- Main Loop ---
+// --- Bucle Principal ---
 while (true)
     var currentTime = clock();
     var deltaTime = (currentTime - lastTime) / 1000.0;
@@ -113,10 +113,10 @@ while (true)
     timer = timer + deltaTime;
     spawnTimer = spawnTimer + deltaTime;
 
-    // Platform movement
+    // Movimiento de la plataforma
     plataforma.x = 100 + Math.sin(timer * 2) * 100;
 
-    // Gradually spawn balls up to the limit
+    // Ir sacando bolas poco a poco hasta el límite
     if (totalBolas < MAX_BOLAS and spawnTimer >= INTERVALO_SPAWN) then
         var idx = totalBolas
         var x = 160 + Math.sin(idx * 1.3) * 120
@@ -126,7 +126,7 @@ while (true)
         spawnTimer = 0.0
     end
 
-    // Update scene
+    // Actualizar escena
     mainScene.update();
 
     // Render

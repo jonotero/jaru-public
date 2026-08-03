@@ -1,0 +1,928 @@
+// =====================================================================
+// PhysicsCheck - Bateria de comprobacion del motor de FISICAS y COLISIONES
+// Created: 2026-07-12  (Jon Otero + Claude)
+//
+// FASE A (headless, determinista, auto-verificable con PASS/FAIL):
+//   ejercita deteccion y resolucion de una sola pasada, que NO dependen
+//   de deltaTime (la separacion de posicion y el impulso son geometricos).
+//   Cubre toda la API y, en particular, los fixes de la auditoria 2026-07:
+//     - clamp de friction/elasticity/grid.elasticity a [0,1]  (anti-NaN)
+//     - clamp de scene.iters (256 ya no envuelve a 0 y apaga el solver)
+//     - sprite VISUAL colisionable no crashea en el solver (null-deref)
+//     - CollisionGetCenter respeta la rotacion (broadphase con offset+giro)
+//     - circle-vs-rect: overlap correcto con el centro dentro (minDist)
+//     - grid: recolocacion absoluta (no hundimiento en caida rapida)
+//     - grid: filtro de caras internas (sin frenazo en costuras del suelo)
+//     - friccion Coulomb (un roce rasante ya no mata la velocidad tangencial)
+//     - restitucion, masa/impulso, one-way, swept, tope de 8, onGround...
+//
+// FASE B (visual): abre una ventana y ejecuta el motor de fisicas en vivo
+//   (gravedad, apilado, rebote, friccion, barra cinematica giratoria) con
+//   un HUD y un vigilante de NaN. Cierra la ventana para terminar.
+//
+// Ejecutar desde el IDE con este fichero como principal.
+// =====================================================================
+
+use Sprite, GridMap, Scene, Math, Display
+
+const TILE = 16
+
+// --- Marcador global -------------------------------------------------
+var passCount = 0
+var failCount = 0
+var failNames = []      // nombres de los Check que fallaron (para el HUD)
+
+func Check(name, cond)
+    if (cond) then
+        passCount++
+        println("  [PASS] ", name)
+    else
+        failCount++
+        failNames.append(name)
+        println("  [FAIL] ", name)
+    end
+end
+
+// --- Regresiones pendientes (red de la re-auditoria 2026-07-12) -------
+// RegCheck codifica el comportamiento CORRECTO (post-parche). NO toca el
+// pass/fail del suite: hasta aplicar los parches sale [REG-PENDIENTE]
+// (rojo ESPERADO) y, cuando el motor este parcheado, debe pasar a [REG-OK].
+// Asi el suite base sigue "verde" y estas marcan exactamente la deuda.
+var regFixed = 0
+var regPending = 0
+var regPendingNames = []
+
+func RegCheck(name, cond)
+    if (cond) then
+        regFixed++
+        println("  [REG-OK] ", name)
+    else
+        regPending++
+        regPendingNames.append(name)
+        println("  [REG-PENDIENTE] ", name)
+    end
+end
+
+// Igualdad aproximada para floats
+func Near(a, b, tol)
+    return Math.abs(a - b) < tol
+end
+
+// Detecta NaN en esta VM (NaN-boxing). OJO: 'v != v' NO sirve aqui (el ==
+// compara bits crudos, asi que nan==nan es true y nan!=nan es false). Un
+// NaN es el unico valor que falla A LA VEZ '>=0' y '<=0' (ambos van al
+// comparador float de C, donde nan>=0 y nan<=0 son false).
+func isNaN(v)
+    return ((v >= 0) == false) and ((v <= 0) == false)
+end
+
+// --- Plantilla de sprite: se clona con Sprite.new(x,y,tpl), que ademas
+//     fija prevX/prevY = x,y (forma de 3 argumentos). Cada cuerpo
+//     sobreescribe su collider, asi el tamano de la imagen no importa.
+var tpl = Sprite.load("Sprites/box01.spr")
+
+// Cuerpo con collider RECTANGULAR [0,0,w,h] y pivot dado.
+func RectBody(x, y, w, h, pvx, pvy)
+    var b = Sprite.new(x, y, tpl)
+    b.pivot = [pvx, pvy]
+    b.collider = [0, 0, w, h]
+    return b
+end
+
+// Cuerpo con collider CIRCULAR de radio r cuyo centro cae en (x+r, y+r).
+func CircleBody(x, y, r)
+    var b = Sprite.new(x, y, tpl)
+    b.pivot = [0, 0]
+    b.collider = [r, r, r]
+    return b
+end
+
+func HasTile(hits, tx, ty)
+    if (hits == nil) then return false end
+    foreach (var t in hits)
+        if (t[0] == tx and t[1] == ty) then return true end
+    end
+    return false
+end
+
+func HitCount(hits)
+    if (hits == nil) then return 0 end
+    return len(hits)
+end
+
+// =====================================================================
+println("===== PhysicsCheck (FASE A: headless) =====")
+println("tpl loaded: ", tpl != nil, "  w=", tpl.width, " h=", tpl.height)
+
+// ---------------------------------------------------------------------
+// 1) Setters, clamps y saneo de rangos  (fixes de la auditoria)
+// ---------------------------------------------------------------------
+println("")
+println("--- 1) propiedades fisicas: rango y clamps ---")
+var pv = RectBody(0, 0, 16, 16, 0, 0)
+pv.bodyType = Sprite.DYNAMIC
+
+// mass / velocity / acceleration: roundtrip de valores validos
+pv.mass = 2.5
+Check("mass roundtrip (2.5)", Near(pv.mass, 2.5, 0.001))
+pv.velocity = [12, -7]
+Check("velocity roundtrip [12,-7]", pv.vx == 12 and pv.vy == -7)
+pv.vx = 3
+pv.vy = 4
+Check("vx/vy setters sueltos", pv.vx == 3 and pv.vy == 4)
+
+// friction clamp [0,1]  (>1 producia NaN via powf; <0 era inerte)
+pv.friction = 5.0
+Check("friction > 1 se clampa a 1.0", Near(pv.friction, 1.0, 0.001))
+pv.friction = -3.0
+Check("friction < 0 se clampa a 0.0", Near(pv.friction, 0.0, 0.001))
+pv.friction = 0.35
+Check("friction valido roundtrip (0.35)", Near(pv.friction, 0.35, 0.001))
+
+// elasticity clamp [0,1]  (>1 ganaba energia cada rebote)
+pv.elasticity = 4.0
+Check("elasticity > 1 se clampa a 1.0", Near(pv.elasticity, 1.0, 0.001))
+pv.elasticity = -1.0
+Check("elasticity < 0 se clampa a 0.0", Near(pv.elasticity, 0.0, 0.001))
+
+// bodyType roundtrip
+pv.bodyType = Sprite.KINEMATIC
+Check("bodyType roundtrip (KINEMATIC)", pv.bodyType == Sprite.KINEMATIC)
+pv.bodyType = Sprite.DYNAMIC
+
+// scene.iters: 256 ya NO envuelve a 0 (que apagaba el solver); <1 -> 1
+var sIt = Scene.new()
+sIt.iters = 256
+Check("scene.iters = 256 se satura (no envuelve a 0)", sIt.iters > 0 and sIt.iters <= 255)
+sIt.iters = 0
+Check("scene.iters = 0 se clampa a 1", sIt.iters == 1)
+sIt.iters = 4
+Check("scene.iters valido roundtrip (4)", sIt.iters == 4)
+
+// grid.elasticity clamp [0,1]
+var gEl = GridMap.new(4, 4)
+gEl.elasticity = 3.0
+Check("grid.elasticity > 1 se clampa a 1.0", Near(gEl.elasticity, 1.0, 0.001))
+gEl.elasticity = -2.0
+Check("grid.elasticity < 0 se clampa a 0.0", Near(gEl.elasticity, 0.0, 0.001))
+
+// ---------------------------------------------------------------------
+// 2) Sprite VISUAL colisionable NO crashea en el solver  (null-deref fix)
+//    Un sprite recien creado es VISUAL (sin physics) y colisionable por
+//    defecto. Si un DYNAMIC lo tocaba dentro de la escena, el solver
+//    dereferenciaba physics=nullptr. Debe resolverse sin crash.
+// ---------------------------------------------------------------------
+println("")
+println("--- 2) VISUAL + DYNAMIC en escena: sin crash ---")
+var scV = Scene.new()
+scV.gravity = 0
+var vis = RectBody(100, 100, 16, 16, 0, 0)   // VISUAL por defecto (sin physics)
+var dynHit = RectBody(104, 100, 16, 16, 0, 0) // solapa al VISUAL
+dynHit.bodyType = Sprite.DYNAMIC
+scV.addSprite(vis)
+scV.addSprite(dynHit)
+scV.update()   // con el bug: crash aqui
+Check("scene.update con VISUAL+DYNAMIC solapados no crashea", true)
+Check("el sprite VISUAL es atravesable (no lo empuja el solver)", vis.x == 100)
+
+// ---------------------------------------------------------------------
+// 3) sprite.hits (deteccion sprite vs sprite)
+// ---------------------------------------------------------------------
+println("")
+println("--- 3) sprite.hits: AABB / circulo / borde / pivot ---")
+var a = RectBody(50, 50, 16, 16, 0, 0)   // [50..66]
+var b1 = RectBody(58, 58, 16, 16, 0, 0)  // solapa
+var b2 = RectBody(90, 90, 16, 16, 0, 0)  // separado
+Check("rects solapados -> hit", a.hits(b1) != nil)
+Check("rects separados -> nil", a.hits(b2) == nil)
+var edge = RectBody(66, 50, 16, 16, 0, 0) // left==right de A: AABB usa < (sin solape)
+Check("rects que solo se tocan en el borde -> nil", a.hits(edge) == nil)
+var piv = RectBody(58, 58, 16, 16, 8, 8)  // pivot desplaza el collider a [50..66]
+Check("el pivot desplaza el collider (solapa)", a.hits(piv) != nil)
+
+var ca = CircleBody(50, 50, 8)   // centro (58,58) r=8
+var cb = CircleBody(60, 50, 8)   // centro (68,58) dist=10 < 16 -> solapa
+var cc = CircleBody(90, 50, 8)   // centro (98,58) dist=40 -> no
+Check("circulos solapados -> hit", ca.hits(cb) != nil)
+Check("circulos separados -> nil", ca.hits(cc) == nil)
+
+// ---------------------------------------------------------------------
+// 4) Broadphase con ROTACION  (fix: CollisionGetCenter rota el centro)
+//    Collider desplazado del pivot: al girar 180 grados debe orbitar el
+//    pivot. Con el bug el broadphase usaba el centro SIN rotar y descartaba
+//    la colision aunque el narrowphase la habria encontrado.
+// ---------------------------------------------------------------------
+println("")
+println("--- 4) broadphase respeta la rotacion (collider descentrado) ---")
+var rotA = RectBody(100, 100, 8, 8, 0, 0)
+rotA.collider = [24, 0, 8, 8]        // collider 8x8, centro rel (28,4): lejos del pivot
+var rotB = RectBody(68, 96, 8, 8, 0, 0)
+rotB.collider = [0, 0, 8, 8]         // centro rel (4,4) -> centro mundo (72,100)
+rotA.angle = 0
+Check("sin rotar: colliders separados -> nil", rotA.hits(rotB) == nil)
+rotA.angle = 180                     // el collider de A orbita a (72,96): solapa B
+Check("rotado 180: el broadphase encuentra el solape (centro rotado)", rotA.hits(rotB) != nil)
+
+// ---------------------------------------------------------------------
+// 5) Circle-vs-rect con el centro DENTRO  (fix: minDist = dBottom)
+//    Circulo DYNAMIC con el centro dentro de un rect STATIC, cerca del
+//    borde inferior. La expulsion debe ser pequena (~radio + distancia al
+//    borde mas cercano). Con el bug se expulsaba decenas de px (usaba la
+//    distancia del borde equivocado).
+// ---------------------------------------------------------------------
+println("")
+println("--- 5) circle-vs-rect: expulsion acotada (centro dentro) ---")
+var scP = Scene.new()
+scP.gravity = 0
+scP.iters = 1
+var bigRect = RectBody(100, 100, 100, 40, 0, 0)  // rect mundo [100..200]x[100..140]
+bigRect.bodyType = Sprite.STATIC
+// circulo r=8 con centro en (130,138): dentro, a 2px del borde inferior (140),
+// a 30 del izq, 38 del sup. La salida correcta es ~radio+2 = 10; el bug daria ~38.
+var circ = CircleBody(122, 130, 8)               // centro (122+8,130+8) = (130,138)
+circ.bodyType = Sprite.DYNAMIC
+var cy0 = circ.y
+scP.addSprite(bigRect)
+scP.addSprite(circ)
+scP.update()
+var disp = Math.abs(circ.y - cy0) + Math.abs(circ.x - 122)
+println("  desplazamiento tras resolver: ", disp, " (correcto ~10, bug ~38)")
+Check("expulsion acotada (< 20 px, no el borde equivocado)", disp < 20.0)
+Check("hubo expulsion real (> 3 px)", disp > 3.0)
+
+// ---------------------------------------------------------------------
+// 6) Restitucion e impulso por masa (una sola resolucion, sin dt)
+// ---------------------------------------------------------------------
+println("")
+println("--- 6) restitucion e impulso/masa ---")
+var scR = Scene.new()
+scR.gravity = 0
+scR.iters = 1
+var floorR = RectBody(0, 200, 200, 16, 0, 0)   // suelo STATIC [0..200]x[200..216]
+floorR.bodyType = Sprite.STATIC
+floorR.elasticity = 0.5
+var ball = RectBody(50, 190, 16, 16, 0, 0)     // [50..66]x[190..206] solapa el suelo
+ball.bodyType = Sprite.DYNAMIC
+ball.elasticity = 0.5
+ball.velocity = [0, 100]                        // cayendo hacia el suelo
+scR.addSprite(floorR)
+scR.addSprite(ball)
+scR.update()
+println("  vy tras el rebote: ", ball.vy, " (esperado ~ -50)")
+Check("restitucion invierte la velocidad normal (vy < 0)", ball.vy < 0)
+Check("restitucion escala la velocidad (|vy| entre 25 y 75)", Math.abs(ball.vy) > 25 and Math.abs(ball.vy) < 75)
+
+// applyImpulse: delta v = impulso / masa  (inmediato, sin dt)
+var imp = RectBody(0, 0, 16, 16, 0, 0)
+imp.bodyType = Sprite.DYNAMIC
+imp.mass = 2.0
+imp.velocity = [0, 0]
+imp.applyImpulse(10, 0)
+Check("applyImpulse escala por 1/masa (vx = 10/2 = 5)", Near(imp.vx, 5.0, 0.001))
+
+// ---------------------------------------------------------------------
+// 7) Friccion COULOMB: un roce rasante no mata la velocidad tangencial
+//    (fix: |impulso tangencial| <= mu * impulso normal)
+//    Caja moviendose muy rapido tangencial (vx=100) con aproximacion
+//    normal minima (vy=2) contra un suelo STATIC. El freno tangencial debe
+//    ser pequeno. Con el modelo viscoso viejo vx caia ~50%.
+// ---------------------------------------------------------------------
+println("")
+println("--- 7) friccion Coulomb (roce rasante conserva vx) ---")
+var scC = Scene.new()
+scC.gravity = 0
+scC.iters = 1
+var floorC = RectBody(0, 200, 200, 16, 0, 0)
+floorC.bodyType = Sprite.STATIC
+floorC.friction = 0.5
+floorC.elasticity = 0.0
+var box = RectBody(50, 191, 16, 16, 0, 0)       // [191..207] solapa el suelo (top 200) 7px
+box.bodyType = Sprite.DYNAMIC
+box.friction = 0.5
+box.elasticity = 0.0
+box.mass = 1.0
+box.velocity = [100, 2]                          // rasante: mucha tangencial, poca normal
+scC.addSprite(floorC)
+scC.addSprite(box)
+scC.update()
+println("  vx tras el roce: ", box.vx, " (Coulomb ~98; viscoso viejo ~50)")
+Check("Coulomb: vx apenas cambia en un roce rasante (> 90)", box.vx > 90)
+
+// ---------------------------------------------------------------------
+// 8) hitsGrid: solidos, one-way, swept, tope de 8
+// ---------------------------------------------------------------------
+println("")
+println("--- 8) hitsGrid: solidos / one-way / swept / tope 8 ---")
+var gs = GridMap.new(16, 8)
+gs.tSize(TILE, TILE)
+gs.set(3, 3, 1)              // solido mundo [48..64]x[48..64]
+gs.solids = [1]
+gs.platforms = []
+var sb = RectBody(50, 50, 8, 8, 0, 0)
+Check("cuerpo sobre solido -> reporta tile (3,3)", HasTile(sb.hitsGrid(gs), 3, 3))
+var sbFar = RectBody(120, 20, 8, 8, 0, 0)
+Check("cuerpo en vacio -> nil", sbFar.hitsGrid(gs) == nil)
+
+// one-way: cayendo desde arriba aterriza; desde dentro/abajo atraviesa
+var gp = GridMap.new(8, 8)
+gp.tSize(TILE, TILE)
+gp.set(3, 3, 2)              // plataforma one-way, top = 48
+gp.solids = [1]
+gp.platforms = [2]
+var land = RectBody(50, 20, 8, 8, 0, 0)   // prevY=20 (fondo 28 <= 48): cae desde arriba
+land.y = 44
+Check("one-way: cae desde arriba -> aterriza", HasTile(land.hitsGrid(gp), 3, 3))
+var thru = RectBody(50, 44, 8, 8, 0, 0)   // prev=curr=44 (fondo 52 > 48): sube/atraviesa
+Check("one-way: desde dentro/abajo -> atraviesa (nil)", thru.hitsGrid(gp) == nil)
+
+// swept: movimiento rapido que 'saltaria' una pared fina SI se detecta
+var gw = GridMap.new(16, 8)
+gw.tSize(TILE, TILE)
+gw.set(4, 3, 1)             // pared fina mundo x[64..80]
+gw.solids = [1]
+gw.platforms = []
+var fast = RectBody(20, 50, 8, 8, 0, 0)   // prevX=20 (izq de la pared)
+fast.x = 120                              // curr: derecha de la pared
+Check("swept: movimiento rapido a traves de pared SI detecta", HasTile(fast.hitsGrid(gw), 4, 3))
+
+// tope de 8 resultados
+var gb = GridMap.new(8, 8)
+gb.tSize(TILE, TILE)
+var rr = 1
+while (rr <= 5)
+    var kc = 1
+    while (kc <= 5)
+        gb.set(kc, rr, 1)
+        kc++
+    end
+    rr++
+end
+gb.solids = [1]
+gb.platforms = []
+var big = RectBody(20, 20, 60, 60, 0, 0)
+var nBig = HitCount(big.hitsGrid(gb))
+println("  tiles reportados por un cuerpo que solapa ~16: ", nBig)
+Check("hitsGrid topa a 8 resultados", nBig <= 8)
+
+// ---------------------------------------------------------------------
+// 9) grid.hits (fisica): recolocacion absoluta en caida rapida  (snap fix)
+//    Cuerpo DYNAMIC que penetra profundamente el suelo (como el final de
+//    una caida rapida). Debe quedar A RAS del borde superior del tile,
+//    NO hundido. Con el bug se aplicaba el overlap del subpaso y quedaba
+//    dentro del tile.
+// ---------------------------------------------------------------------
+println("")
+println("--- 9) grid.hits: snap a ras del suelo (caida rapida) ---")
+var gF = GridMap.new(16, 16)
+gF.tSize(TILE, TILE)
+var col = 0
+while (col < 16)
+    gF.set(col, 10, 1)      // fila de suelo continua, top = 160
+    col++
+end
+gF.solids = [1]
+gF.platforms = []
+var faller = RectBody(40, 100, 16, 16, 0, 0)  // prevY=100 (arriba del suelo)
+faller.bodyType = Sprite.DYNAMIC
+faller.vy = 200
+faller.y = 154                                 // bottom=170: 10px DENTRO del suelo (top 160)
+gF.hits(faller)
+println("  y tras grid.hits: ", faller.y, " (a ras => 144, bottom=160)")
+Check("snap: el cuerpo queda a ras del suelo (y ~ 144)", Near(faller.y, 144, 1.5))
+Check("snap: no queda hundido (bottom <= 161)", faller.y + 16 <= 161)
+Check("grid.hits marca onGround = true", faller.onGround())
+
+// ---------------------------------------------------------------------
+// 10) grid.hits: filtro de caras internas (sin frenazo en costura)  (ghost fix)
+//     Cuerpo cruzando la costura entre dos tiles de suelo continuos. El
+//     tile nuevo entra con overlapX minusculo; su cara lateral la cubre el
+//     vecino solido -> se descarta. La velocidad horizontal se conserva.
+//     Con el bug daba normal horizontal y frenaba en seco (vx -> 0).
+// ---------------------------------------------------------------------
+println("")
+println("--- 10) grid.hits: costura del suelo no frena (ghost filter) ---")
+var gG = GridMap.new(16, 16)
+gG.tSize(TILE, TILE)
+var c2 = 0
+while (c2 < 16)
+    gG.set(c2, 10, 1)       // suelo continuo, top = 160; tiles tx=5 [80..96], tx=6 [96..112]
+    c2++
+end
+gG.solids = [1]
+gG.platforms = []
+var runner = RectBody(79, 144, 16, 16, 0, 0)  // prev cerca del destino
+runner.bodyType = Sprite.DYNAMIC
+runner.vx = 100
+runner.vy = 200
+runner.x = 80.4     // [80.4..96.4]: entra 0.4px en la columna tx=6 (costura)
+runner.y = 149      // bottom=165: 5px dentro del suelo
+gG.hits(runner)
+println("  vx tras cruzar la costura: ", runner.vx, " (conservada ~100; bug -> 0)")
+Check("ghost: la costura del suelo no frena en horizontal (vx > 90)", runner.vx > 90)
+Check("ghost: aun asi aterriza (onGround)", runner.onGround())
+
+// ---------------------------------------------------------------------
+// 11) REGRESIONES PENDIENTES  (re-auditoria de los commits 5d29b4e / d97b9a3
+//     / b6bcd3f). Cada RegCheck afirma lo que un motor CORRECTO haria; hasta
+//     aplicar los parches deben salir en ROJO ([REG-PENDIENTE]) y no cuentan
+//     como FAIL del suite. Referencias: A1..A4 + RT1 de la auditoria.
+// ---------------------------------------------------------------------
+println("")
+println("--- 11) regresiones pendientes (ROJO esperado hasta parchear) ---")
+
+// A4 (b6bcd3f): hitsGrid por defecto debe reportar TODOS los tiles que
+//     colisionan (doc sprite.md: 'por cada tile que colisiona'). Un rect 8x8
+//     en el cruce de un bloque solido 2x2 solapa 4 tiles; hoy el filtro de
+//     caras internas los suprime y la red anti-embebido deja solo 1.
+var g4 = GridMap.new(12, 12)
+g4.tSize(TILE, TILE)
+g4.set(5, 5, 1)
+g4.set(6, 5, 1)
+g4.set(5, 6, 1)
+g4.set(6, 6, 1)
+g4.solids = [1]
+g4.platforms = []
+var body4 = RectBody(92, 92, 8, 8, 0, 0)     // [92..100]x[92..100]: solapa los 4
+var n4 = HitCount(body4.hitsGrid(g4))
+println("  A4 hitsGrid tiles reportados: ", n4, "  (correcto 4; hoy 1)")
+RegCheck("A4: hitsGrid por defecto reporta los 4 tiles solapados", n4 == 4)
+
+// A2 (b6bcd3f): circulo rozando la ESQUINA de un tile. Penetracion radial
+//     real ~0.10px, pero el snap por AABB lo expulsa ~3px (pop). Debe
+//     moverse < 1px (la base movia justo la penetracion real).
+var g2 = GridMap.new(12, 12)
+g2.tSize(TILE, TILE)
+g2.set(5, 5, 1)                               // tile [80..96]x[80..96]
+g2.solids = [1]
+g2.platforms = []
+var ball2 = CircleBody(63, 63, 10)            // centro (73,73): a 9.9px de la esquina (80,80)
+ball2.bodyType = Sprite.DYNAMIC
+ball2.velocity = [0, 2]
+var y2 = ball2.y
+g2.hits(ball2)
+println("  A2 desplazamiento del circulo: ", Math.abs(ball2.y - y2), "  (correcto ~0.10; hoy ~3.0)")
+RegCheck("A2: circulo en esquina no hace pop (< 1px)", Math.abs(ball2.y - y2) < 1.0)
+
+// A2b: contacto de esquina RANCIO. El circulo roza la esquina en un subpaso
+//      intermedio pero en la posicion FINAL ya no penetra radialmente (solo
+//      su AABB solapa el tile). El recheck radial impide recolocarlo con el
+//      contacto viejo: la posicion queda intacta.
+var g2b = GridMap.new(8, 8)
+g2b.tSize(TILE, TILE)
+g2b.set(0, 0, 1)
+g2b.solids = [1]
+g2b.platforms = []
+var c2b = CircleBody(-17, -12, 10)    // centro prev (-7,-2), junto a la esquina (0,0)
+c2b.bodyType = Sprite.DYNAMIC
+c2b.velocity = [0, -60]
+c2b.y = -19                            // centro final (-7,-9): fuera radialmente
+g2b.hits(c2b)
+println("  A2b posicion tras hits: (", c2b.x, ",", c2b.y, ")  (correcta: intacta -17,-19)")
+RegCheck("A2b: esquina rancia no recoloca (posicion intacta)", Near(c2b.x, -17.0, 0.05) and Near(c2b.y, -19.0, 0.05))
+
+// A3 (d97b9a3): circulo DESCENTRADO + ROTADO. CollisionGetCenter rota el
+//     offset pero CircleVsGrid no -> el sprite colisiona en el grid en su
+//     centro SIN rotar. Debe colisionar en el centro ROTADO (coherente con
+//     sprite-vs-sprite). collider centro rel (40,0); a 90 grados orbita a
+//     (0,40): centro rotado (100,140); sin rotar (140,100).
+var g3 = GridMap.new(12, 12)
+g3.tSize(TILE, TILE)
+g3.set(6, 8, 1)        // tile del centro ROTADO (100,140)  -> el CORRECTO
+g3.set(8, 6, 1)        // tile del centro sin rotar (140,100) -> el que usa hoy
+g3.solids = [1]
+g3.platforms = []
+var ball3 = Sprite.new(100, 100, tpl)
+ball3.pivot = [0, 0]
+ball3.collider = [40, 0, 6]                   // circulo r=6, centro rel (40,0)
+ball3.angle = 90
+var hits3 = ball3.hitsGrid(g3)
+RegCheck("A3: colisiona en el tile del centro ROTADO (6,8)", HasTile(hits3, 6, 8))
+RegCheck("A3: NO colisiona en el tile del centro sin rotar (8,6)", HasTile(hits3, 8, 6) == false)
+
+// A3b: RESOLUCION del circulo rotado (no solo deteccion). Circulo r=4
+//      descentrado (collider [0,8,4], pivot (8,8)) girado 90: su centro real
+//      cae en (20,0), DENTRO del tile (1,0). La fisica debe recolocarlo a
+//      ras por arriba (y: 8 -> 4) usando el centro ROTADO; con los offsets
+//      sin rotar la guarda fallaba y solo mataba la velocidad sin recolocar.
+var g3b = GridMap.new(8, 8)
+g3b.tSize(TILE, TILE)
+g3b.set(1, 0, 1)
+g3b.solids = [1]
+g3b.platforms = []
+var s3b = Sprite.new(20, 8, tpl)
+s3b.pivot = [8, 8]
+s3b.collider = [0, 8, 4]
+s3b.angle = 90
+s3b.bodyType = Sprite.DYNAMIC
+s3b.velocity = [0, 10]
+g3b.hits(s3b)
+println("  A3b y tras resolver: ", s3b.y, "  (correcto 4: a ras con centro rotado; bug: 8 sin recolocar)")
+RegCheck("A3b: circulo rotado se RECOLOCA con el centro rotado", Near(s3b.y, 4.0, 0.1) and s3b.onGround())
+
+// A3c: ONE-WAY con circulo rotado: el fondo del collider tambien rota (offB
+//      del centro rotado). Cayendo sobre una plataforma one-way (top=32)
+//      debe aterrizar en y=36 (36 + offB(-4) = 32); sin rotar aterrizaba
+//      8px mas arriba (y=28).
+var gOW = GridMap.new(8, 8)
+gOW.tSize(TILE, TILE)
+gOW.set(1, 2, 2)
+gOW.solids = [1]
+gOW.platforms = [2]
+var sOW = Sprite.new(20, 20, tpl)
+sOW.pivot = [8, 8]
+sOW.collider = [0, 8, 4]
+sOW.angle = 90
+sOW.bodyType = Sprite.DYNAMIC
+sOW.velocity = [0, 50]
+sOW.y = 37
+gOW.hits(sOW)
+println("  A3c y tras aterrizar en one-way: ", sOW.y, "  (correcto 36; sin rotar: 28)")
+RegCheck("A3c: one-way usa el fondo ROTADO del circulo", Near(sOW.y, 36.0, 0.1) and sOW.onGround())
+
+// A1 (b6bcd3f): rect EMBEBIDO en una masa solida. La red anti-embebido emite
+//     UN solo contacto y el snap resuelve UNA cara -> puede empujarlo hacia
+//     la cara MAS LEJANA (y con ello hundir/atravesar). Colocado en la mitad
+//     SUPERIOR de una masa 3x3: la salida cercana es ARRIBA, asi que una
+//     pasada de resolucion NO debe aumentar 'y' (empujar hacia abajo).
+//     [Nota: la asercion es de UNA pasada; reconfirmar el valor exacto cuando
+//     se implemente el parche A1 -- cualquier fix correcto resuelve hacia la
+//     cara cercana y deja y <= inicial.]
+var g1 = GridMap.new(12, 12)
+g1.tSize(TILE, TILE)
+var ry = 1
+while (ry <= 3)
+    var rx = 1
+    while (rx <= 3)
+        g1.set(rx, ry, 1)      // masa solida 3x3 -> mundo [16..64]x[16..64]
+        rx++
+    end
+    ry++
+end
+g1.solids = [1]
+g1.platforms = []
+var body1 = RectBody(26, 26, 12, 12, 0, 0)    // [26..38]: mitad superior, solapa 4 tiles
+body1.bodyType = Sprite.DYNAMIC
+body1.velocity = [0, 0]
+var y1 = body1.y
+g1.hits(body1)
+println("  A1 y del rect embebido: ", body1.y, "  (correcto <= 26; bug ~32, hacia abajo)")
+RegCheck("A1: resolver no empuja el rect embebido a la cara lejana", body1.y <= y1 + 0.5)
+
+// A1b: EXPULSION acotada multi-frame. Un rect embebido en el cuadrante
+//      superior-izq de una masa 3x3 debe salir en pocos frames por una cara
+//      CERCANA (izq o arriba), sin cruzar al lado lejano ni quedarse dentro.
+//      (La red v2 emite UN contacto sintetico con el MTV de la union de
+//      tiles pisados: empuje acotado ~1 tile/frame, monotono.)
+var bx1 = 26.0
+var by1 = 26.0
+var fr = 0
+while (fr < 10)
+    var rf = RectBody(bx1, by1, 12, 12, 0, 0)
+    rf.bodyType = Sprite.DYNAMIC
+    rf.velocity = [0, 0]
+    g1.hits(rf)
+    bx1 = rf.x
+    by1 = rf.y
+    fr++
+end
+var freeB = RectBody(bx1, by1, 12, 12, 0, 0)
+println("  A1b posicion final: (", bx1, ",", by1, ")  (esperado (4,26): fuera por la IZQ)")
+RegCheck("A1b: rect embebido sale por una cara cercana sin atravesar", freeB.hitsGrid(g1) == nil and bx1 < 16 and bx1 > -30 and by1 < 40)
+
+// A1c: ENTRADA EN MOVIMIENTO (el repro original de la auditoria). El rect
+//      entra en diagonal en una masa 3x2: el primer subpaso genera un
+//      contacto exterior de refilon (count=1) que ya NO solapa la posicion
+//      final. La red v2 detecta el embebido en la POSICION FINAL (no exige
+//      count==0) y lo expulsa por la cara cercana en pocos frames.
+var gC = GridMap.new(8, 8)
+gC.tSize(TILE, TILE)
+var cc1 = 0
+while (cc1 <= 2)
+    gC.set(cc1, 1, 1)
+    gC.set(cc1, 2, 1)
+    cc1++
+end
+gC.solids = [1]
+gC.platforms = []
+var bodyC = RectBody(-8, 0, 16, 16, 0, 0)   // prev=(-8,0): fuera, arriba-izq
+bodyC.bodyType = Sprite.DYNAMIC
+bodyC.velocity = [60, 60]
+bodyC.x = 18
+bodyC.y = 18                                 // curr=(18,18): embebido en la masa
+gC.hits(bodyC)
+var cxp = bodyC.x
+var cyp = bodyC.y
+var frC = 0
+while (frC < 10)
+    var rc2 = RectBody(cxp, cyp, 16, 16, 0, 0)
+    rc2.bodyType = Sprite.DYNAMIC
+    rc2.velocity = [0, 0]
+    gC.hits(rc2)
+    cxp = rc2.x
+    cyp = rc2.y
+    frC++
+end
+var freeC = RectBody(cxp, cyp, 16, 16, 0, 0)
+println("  A1c posicion final: (", cxp, ",", cyp, ")  (esperado (-16,18): sale por la IZQ)")
+RegCheck("A1c: entrada en movimiento embebida se expulsa sin atravesar", freeC.hitsGrid(gC) == nil and cxp <= 0.5 and cxp > -40 and cyp < 40)
+
+// A1d: COLUMNA ALTA embebida (el caso que rompia el fix v1: 8 contactos con
+//      la MISMA normal se sumaban -> teleport de ~8 tiles a traves de la
+//      masa). Con el MTV de la union debe salir con UN empuje de ~1 tile.
+var gD = GridMap.new(16, 8)
+gD.tSize(TILE, TILE)
+var rD = 0
+while (rD < 8)
+    gD.set(5, rD, 1)
+    gD.set(6, rD, 1)
+    rD++
+end
+gD.solids = [1]
+gD.platforms = []
+var bodyD = RectBody(80.5, 0, 15, 128, 0, 0)   // dentro de la columna 5 entera
+bodyD.bodyType = Sprite.DYNAMIC
+bodyD.velocity = [0, 0]
+gD.hits(bodyD)
+println("  A1d x tras un frame: ", bodyD.x, "  (correcto 65: ~1 tile a la izq; v1 rota: ~204)")
+RegCheck("A1d: columna embebida sale con empuje acotado (1 tile)", Near(bodyD.x, 65.0, 0.6) and Near(bodyD.y, 0.0, 0.001))
+
+// A1e: WRAP — pisar la COPIA envuelta de un tile solido. Con wrapX, el rect
+//      en (32,0) esta dentro de la copia [32,48] del tile 0. La union del
+//      MTV debe construirse en el FRAME DEL SPRITE: con el bug se construia
+//      en el strip canonico [0,16], dRight salia -16, el sintetico se emitia
+//      con overlap POSITIVO y el resolver no recolocaba (guarda canonica)
+//      pero SI mataba vx y reportaba hit: pared fantasma / falso stop.
+var gE = GridMap.new(2, 1)
+gE.tSize(TILE, TILE)
+gE.set(0, 0, 1)                     // tile 0 solido; tile 1 vacio
+gE.solids = [1]
+gE.platforms = []
+gE.wrapX = true
+var bodyE = RectBody(32, 0, 8, 8, 0, 0)   // copia envuelta del tile 0: [32,48]
+bodyE.bodyType = Sprite.DYNAMIC
+bodyE.velocity = [50, 0]
+gE.hits(bodyE)
+println("  A1e x tras resolver: ", bodyE.x, "  (correcto 24: expulsado flush; bug: 32 clavado)")
+RegCheck("A1e: embebido en copia envuelta se expulsa (sin pared fantasma)", Near(bodyE.x, 24.0, 0.1) and Near(bodyE.y, 0.0, 0.001))
+
+// A1e2: WRAP — a caballo de la costura contra un muro envuelto. Sprite en
+//       x=30 (span 30..38 sobre el mundo de 32px): la parte 32..38 pisa la
+//       copia del tile 0 y NO hay ningun contacto real. Debe quedar flush
+//       en x=24 (sRight=32), no clavado en 30 con un stop fantasma.
+var bodyE2 = RectBody(30, 0, 8, 8, 0, 0)
+bodyE2.bodyType = Sprite.DYNAMIC
+bodyE2.velocity = [50, 0]
+gE.hits(bodyE2)
+println("  A1e2 x tras resolver: ", bodyE2.x, "  (correcto 24: flush contra la copia; bug: 30)")
+RegCheck("A1e2: costura con wrap colisiona flush contra la copia envuelta", Near(bodyE2.x, 24.0, 0.1))
+
+// RT1 (preexistente, no arreglado): el filtro de caras internas del CIRCULO
+//     esta invertido -> es un no-op. Un circulo hundido cruzando una costura
+//     de suelo recibe un ghost horizontal (la cara lateral del tile vecino,
+//     que deberia suprimirse) y le mata vx. Debe conservar vx.
+var gRt = GridMap.new(16, 16)
+gRt.tSize(TILE, TILE)
+var cxi = 0
+while (cxi < 16)
+    gRt.set(cxi, 10, 1)        // suelo continuo, top = 160
+    cxi++
+end
+gRt.solids = [1]
+gRt.platforms = []
+var ballR = CircleBody(86, 151, 8)            // centro (94,159): 2px izq de la costura x=96
+ballR.bodyType = Sprite.DYNAMIC
+ballR.velocity = [100, 2]
+gRt.hits(ballR)
+println("  RT1 vx tras la costura: ", ballR.vx, "  (correcto ~100; hoy 0 por el ghost)")
+RegCheck("RT1: circulo en costura no recibe ghost horizontal (vx > 90)", ballR.vx > 90)
+
+// ---------------------------------------------------------------------
+// Resumen FASE A
+// ---------------------------------------------------------------------
+println("")
+println("===== RESUMEN FASE A =====")
+println("PASS: ", passCount)
+println("FAIL (inesperados): ", failCount)
+println("Regresiones corregidas: ", regFixed)
+println("Regresiones pendientes (rojo esperado): ", regPending)
+if (regPending > 0) then
+    println("  pendientes de parche:")
+    foreach (var rn in regPendingNames)
+        println("   - ", rn)
+    end
+end
+if (failCount == 0 and regPending == 0) then
+    println(">>> TODO OK (suite verde y todas las regresiones corregidas)")
+elsif (failCount == 0) then
+    println(">>> SUITE BASE VERDE; quedan regresiones pendientes de parche (ESPERADO)")
+else
+    println(">>> HAY FALLOS INESPERADOS en el suite base: revisar arriba")
+end
+println("==========================")
+
+// =====================================================================
+// FASE B - Secuencia VISUAL de escenas que AVANZAN SOLAS (sin pulsar nada,
+//          cada SCENE_SECS segundos). Muestra el motor en vivo: caida y
+//          rebote, friccion (Coulomb), apilado, colisiones rotadas (OBB),
+//          barra cinematica y masas distintas. Arriba el titulo de la
+//          escena, el resumen de la FASE A y un vigilante de NaN.
+//          Cierra la ventana para terminar.
+// =====================================================================
+println("")
+println("Abriendo la secuencia visual (FASE B): cambia de escena sola cada 5s.")
+println("Los resultados PASS/FAIL de la FASE A estan arriba en esta consola.")
+
+const W = 320
+const H = 240
+const SCENE_SECS = 5.0
+const NUM_SCENES = 6
+Display.open(W, H)
+Display.mode(2)
+var draw = Display.draw
+draw.colorBG = 0x0A0E18
+
+var demo = Scene.new()
+demo.gravity = 520
+demo.iters = 6
+demo.stepRate = 60          // fixed timestep: estable e independiente del FPS
+
+// Tamano de la caja (imagen de la plantilla). Suelo/paredes/cuerpos son
+// todos cajas de este tamano: asi draw.scene los dibuja con el collider
+// coincidiendo con la imagen y se ve la rotacion.
+var BW = tpl.width
+var BH = tpl.height
+
+var activeBodies = []       // cuerpos dinamicos de la escena actual
+var activePaddle = nil      // barra cinematica (solo en su escena)
+
+// Caja STATIC (default collider = tamano de imagen)
+func staticBox(x, y, fric)
+    var s = Sprite.new(x, y, tpl)
+    s.pivot = [0, 0]
+    s.bodyType = Sprite.STATIC
+    s.friction = fric
+    s.elasticity = 0.2
+    demo.addSprite(s)
+    return s
+end
+
+// Caja DYNAMIC
+func dynBox(x, y, mass, fric, elas)
+    var s = Sprite.new(x, y, tpl)
+    s.pivot = [0, 0]
+    s.bodyType = Sprite.DYNAMIC
+    s.mass = mass
+    s.friction = fric
+    s.elasticity = elas
+    demo.addSprite(s)
+    activeBodies.append(s)
+    return s
+end
+
+// Suelo y paredes como filas/columnas de cajas STATIC
+func buildBounds()
+    var x = 0
+    while (x < W)
+        staticBox(x, H - BH, 0.6)          // suelo
+        x = x + BW
+    end
+    var y = 0
+    while (y < H)
+        staticBox(0, y, 0.4)               // pared izquierda
+        staticBox(W - BW, y, 0.4)          // pared derecha
+        y = y + BH
+    end
+end
+
+// Construye la escena n y devuelve su titulo.
+func buildScenario(n)
+    // Quita los cuerpos dinamicos de la escena anterior; el marco (suelo y
+    // paredes) se construye UNA sola vez y permanece (sin churn de GC).
+    foreach (var oldb in activeBodies)
+        demo.removeSprite(oldb)
+    end
+    if (activePaddle != nil) then
+        demo.removeSprite(activePaddle)
+    end
+    activeBodies = []
+    activePaddle = nil
+    var title = ""
+
+    if (n == 0) then
+        title = "1/6  Caida libre y rebote (elasticidad)"
+        var b1 = dynBox(60, -30, 1.0, 0.3, 0.85)
+        b1.velocity = [0, 10]
+        var b2 = dynBox(150, -60, 1.0, 0.3, 0.55)
+        var b3 = dynBox(240, -20, 1.0, 0.3, 0.9)
+        b3.velocity = [-20, 0]
+    elsif (n == 1) then
+        title = "2/6  Friccion (Coulomb): izq alta, der baja"
+        // Dos cajas con la MISMA velocidad; la de mucha friccion frena
+        // antes, la de poca friccion resbala hasta la pared.
+        var hi = dynBox(40, H - 2 * BH, 1.0, 0.95, 0.05)
+        hi.velocity = [120, 0]
+        var lo = dynBox(180, H - 2 * BH, 1.0, 0.02, 0.05)
+        lo.velocity = [120, 0]
+    elsif (n == 2) then
+        title = "3/6  Apilado de cajas"
+        for (var i = 0; i < 6; i++)
+            var b = dynBox(W / 2 - BW / 2, -20 - i * (BH + 10), 1.0, 0.8, 0.05)
+        end
+    elsif (n == 3) then
+        title = "4/6  Colisiones rotadas (OBB)"
+        for (var i = 0; i < 5; i++)
+            var b = dynBox(40 + i * 55, 40 + (i % 2) * 30, 1.0, 0.3, 0.7)
+            b.velocity = [Math.sin(i * 2.1) * 90, Math.sin(i * 1.3) * 40]
+            b.spin = 2.0 + i * 0.7
+            b.angle = i * 25
+        end
+    elsif (n == 4) then
+        title = "5/6  Barra cinematica giratoria"
+        var p = Sprite.new(W / 2 - BW / 2, 120, tpl)
+        p.pivot = [BW / 2, BH / 2]     // gira sobre su centro
+        p.bodyType = Sprite.KINEMATIC
+        p.friction = 0.3
+        p.elasticity = 0.5
+        demo.addSprite(p)
+        activePaddle = p
+        for (var i = 0; i < 6; i++)
+            var b = dynBox(40 + i * 42, -20 - (i % 3) * 20, 1.0, 0.3, 0.5)
+        end
+    else
+        title = "6/6  Masas distintas (pesada arrastra ligeras)"
+        var heavy = dynBox(W / 2 - BW / 2, -50, 8.0, 0.4, 0.2)
+        heavy.velocity = [0, 90]
+        for (var i = 0; i < 5; i++)
+            var b = dynBox(60 + i * 45, H - 2 * BH, 0.4, 0.3, 0.35)
+        end
+    end
+
+    return title
+end
+
+buildBounds()               // marco fijo (suelo + paredes), una sola vez
+var currentN = 0
+var title = buildScenario(0)
+var t = 0.0
+var sceneT = 0.0
+var lastT = clock()
+var nanSeen = false
+
+while (true)
+    var now = clock()
+    var dt = (now - lastT) / 1000.0
+    lastT = now
+    if (dt > 0.05) then dt = 0.05 end
+    t = t + dt
+    sceneT = sceneT + dt
+
+    // Avance automatico de escena (sin pulsar nada)
+    if (sceneT >= SCENE_SECS) then
+        sceneT = 0.0
+        currentN = currentN + 1
+        if (currentN >= NUM_SCENES) then currentN = 0 end
+        title = buildScenario(currentN)
+    end
+
+    // La barra cinematica gira y oscila (solo en su escena)
+    if (activePaddle != nil) then
+        activePaddle.angle = t * 80
+        activePaddle.x = W / 2 - BW / 2 + Math.sin(t * 1.4) * 70
+    end
+
+    demo.update()
+
+    // Vigilante de NaN + cuenta de apoyados sobre los cuerpos dinamicos.
+    // El clamp anti-NaN de friction/elasticity garantiza que nunca haya NaN.
+    var resting = 0
+    foreach (var s in activeBodies)
+        if (isNaN(s.x) or isNaN(s.y)) then nanSeen = true end
+        if (s.onGround()) then resting = resting + 1 end
+    end
+
+    // --- Render ---
+    draw.cls()
+    draw.scene(demo)
+
+    // Banda superior con el estado
+    draw.color = 0x30E0A0
+    draw.text(6, 6, title)
+    draw.color = 0xC0C8D8
+    draw.text(6, 20, "cambia sola cada 5s   apoyados: " + resting.toString())
+    if (failCount == 0) then
+        draw.color = 0x50FF90
+        draw.text(6, 34, "FASE A (consola): " + passCount.toString() + " OK / 0 FALLO")
+    else
+        draw.color = 0xFF5555
+        draw.text(6, 34, "FASE A (consola): " + passCount.toString() + " OK / " + failCount.toString() + " FALLO")
+    end
+    if (nanSeen) then
+        draw.color = 0xFF4040
+        draw.text(6, 48, "NaN DETECTADO (fallo del clamp!)")
+    else
+        draw.color = 0x5090C0
+        draw.text(6, 48, "NaN watch: OK")
+    end
+
+    Display.update()
+end

@@ -4,11 +4,18 @@
 // Version: 1.0.0
 
 
-// Reverses a string
+//==================================================================
+// Función que invierte una cadena de texto.
+// Recibe: Un string.
+// Devuelve: Un nuevo string que es el reverso del original.
+//==================================================================
 func invertirCadena(cadena)
     var cadenaInvertida = ""
 
+    // Bucle 'for' que recorre la cadena desde el final hasta el principio.
+    // len(cadena) da la longitud[cite: 101]. Se resta 1 porque el índice empieza en 0.
     for (var i = len(cadena) - 1; i >= 0; i--)
+        // Se concatena cada caracter al nuevo string
         cadenaInvertida = cadenaInvertida + cadena[i]
     end
 
@@ -16,17 +23,23 @@ func invertirCadena(cadena)
 end
 
 
-println("--- Palindrome Checker ---")
-println("Enter a word to check if it is a palindrome:")
+//==================================================================
+// Programa Principal
+//==================================================================
+println("--- Verificador de Palíndromos ---")
+println("Introduce una palabra para comprobar si es un palíndromo:")
 
 var textoOriginal = readLine()
+
+// Llamamos a la función para obtener la versión invertida del texto
 var textoInvertido = invertirCadena(textoOriginal)
 
-println("-> Original text: ", textoOriginal)
-println("-> Reversed text: ", textoInvertido)
+println("-> Texto original: ", textoOriginal)
+println("-> Texto invertido: ", textoInvertido)
 
+// Comparamos el texto original con su versión invertida
 if (textoOriginal == textoInvertido) then
-    println("Result: It is a palindrome!")
+    println("Resultado: ¡Es un palíndromo!")
 else
-    println("Result: It is not a palindrome.")
+    println("Resultado: No es un palíndromo.")
 end

@@ -1,0 +1,27 @@
+use Http
+
+// Timeout a 10s (por defecto ya es 10000 ms, pero lo mostramos)
+Http.timeout(10000)
+
+// Cabeceras: Content-Type y algo de ejemplo
+Http.clearHeaders()
+Http.setHeader("Content-Type", "application/json")
+Http.setHeader("X-Demo", "JARU")
+
+var payload = '{ "id":12345, "name":"JARU test", "active":true, "score":98.6, "tags":["amiga","iot","esp32","vm"], "profile":{"email":"user@example.com","language":"es-ES","city":"A Coruña","createdAt":"2025-08-11T10:30:00Z"}, "settings":{"theme":"dark","notifications":{"email":true,"push":false}}, "items":[{"sku":"ABC-001","qty":2,"price":3.5},{"sku":"XYZ-777","qty":1,"price":9.99,"meta":{"color":"azul","gift":null}}], "notes":"Prueba con acentos áéíóú ñ y emojis 🔧🚀" }'
+
+// Tercer argumento opcional: contentType (útil si no llamaste a setHeader)
+var resp = Http.post("https://postman-echo.com/post", payload, "application/json")
+
+if (resp != nil) then
+    print("POST OK")
+    print("Status:")
+    print(Http.status())
+    print("Body:")
+    print(resp)
+else
+    print("POST ERROR")
+    print(Http.error())
+end
+
+

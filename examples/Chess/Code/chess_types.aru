@@ -1,8 +1,8 @@
 /********************************************************
- * Chess Game - Types and Constants
+ * Juego de Ajedrez - Tipos y Constantes (Optimizado ESP32)
  ********************************************************/
 
-// Piece constants
+// Constantes para las piezas
 const NINGUNA = 0
 const PEON = 10
 const ALFIL = 11
@@ -11,23 +11,23 @@ const TORRE = 13
 const DAMA = 14
 const REY = 15
 
-// Color constants
+// Constantes para los colores
 const BLANCO = 1
 const NEGRO = 2
 const NINGUNO = 0
 
-// Visual piece lookup
+// Diccionario para representación visual de las piezas
 const piezas_dict = {
-    10: "P",  // Pawn
-    11: "A",  // Bishop
-    12: "C",  // Knight
-    13: "T",  // Rook
-    14: "D",  // Queen
-    15: "R",  // King
-    0: " "    // Empty cell
+    10: "P",  // Peón
+    11: "A",  // Alfil
+    12: "C",  // Caballo
+    13: "T",  // Torre
+    14: "D",  // Dama
+    15: "R",  // Rey
+    0: " "    // Casilla vacía
 }
 
-// Board cell
+// Clase para representar una casilla del tablero
 class TCasilla
     def init()
         this.pieza = NINGUNA
@@ -44,7 +44,7 @@ class TCasilla
     end
 end
 
-// Game state
+// Clase para mantener el estado del juego
 class TEstado
     def init()
         this.turno = BLANCO
@@ -52,17 +52,17 @@ class TEstado
         this.jaque_blanco = false
         this.jaque_negro = false
         this.terminar = false
-        // Castling flags
+        // Flags para enroque
         this.rey_blanco_movido = false
         this.rey_negro_movido = false
-        this.torre_a1_movida = false  // White queenside rook
-        this.torre_h1_movida = false  // White kingside rook
-        this.torre_a8_movida = false  // Black queenside rook
-        this.torre_h8_movida = false  // Black kingside rook
-        // En passant
-        this.peon_doble_x = -1  // Column of pawn that advanced 2
-        this.peon_doble_y = -1  // Row of pawn that advanced 2
-        // King position cache
+        this.torre_a1_movida = false  // Torre blanca lado dama
+        this.torre_h1_movida = false  // Torre blanca lado rey
+        this.torre_a8_movida = false  // Torre negra lado dama
+        this.torre_h8_movida = false  // Torre negra lado rey
+        // Para captura al paso
+        this.peon_doble_x = -1  // Columna del peón que avanzó 2
+        this.peon_doble_y = -1  // Fila del peón que avanzó 2
+        // Cache posicion del rey
         this.rey_blanco_x = 4
         this.rey_blanco_y = 7
         this.rey_negro_x = 4

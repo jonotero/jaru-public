@@ -63,7 +63,7 @@ strip.setBrightness(128)
 while (true)
 
     // -------------------------------------------------
-    // 1) Row sweep: useful for checking linear mapping
+    // 1) Barrido por filas: útil para comprobar mapeo lineal
     // -------------------------------------------------
     for (var y = 0;y < HEIGHT;y++)
         cls(strip)
@@ -77,7 +77,7 @@ while (true)
     end
 
     // -------------------------------------------------
-    // 2) Column sweep
+    // 2) Barrido por columnas
     // -------------------------------------------------
     for (var x = 0;x < WIDTH;x++)
         cls(strip)
@@ -91,7 +91,7 @@ while (true)
     end
 
     // -------------------------------------------------
-    // 3) Animated checkerboard
+    // 3) Tablero animado
     // -------------------------------------------------
     for (var i = 0;i < 6;i++)
         cls(strip)
@@ -101,7 +101,7 @@ while (true)
     end
 
     // -------------------------------------------------
-    // 4) Border + moving cross
+    // 4) Marco + cruz moviéndose
     // -------------------------------------------------
     for (var i = 0;i < 8;i++)
         cls(strip)
@@ -112,7 +112,8 @@ while (true)
     end
 
     // -------------------------------------------------
-    // 5) Dot traversing the whole matrix
+    // 5) Punto recorriendo toda la matriz
+    // aquí se ve clarísimo si las filas van en orden
     // -------------------------------------------------
     for (var y = 0;y < HEIGHT;y++)
         for (var x = 0;x < WIDTH;x++)

@@ -38,14 +38,14 @@ while (true)
     for (var y = 0; y < HEIGHT; y++)
         for (var x = 0; x < WIDTH; x++)
 
-            // X-centered coordinates, normalized on Y
+            // Coordenadas centradas en X y normalizadas en Y
             var fx = x - 3.5
             var fy = y
 
-            // More heat at the bottom
+            // Más calor en la parte baja
             var heat = (HEIGHT - 1 - y) / 7.0
 
-            // Horizontal waves + vertical component
+            // Ondas horizontales + componente vertical
             var v1 = Math.sin(fx * 0.9 + t * 1.7)
             var v2 = Math.sin((fx * 1.7) - (t * 1.2) + y * 0.35)
             var v3 = Math.cos((fx + fy) * 0.8 - t * 1.4)
@@ -53,22 +53,22 @@ while (true)
 
             var plasma = v1 + v2 + v3 + v4
 
-            // Final intensity: mix of plasma + vertical heat
+            // Intensidad final: mezcla de plasma + calor vertical
             var energy = ((plasma + 4.0) / 8.0) * 0.75 + heat * 0.90
             energy = clamp(energy, 0.0, 1.0)
 
-            // Fire palette:
-            // 0   -> dark red
-            // 20  -> red
-            // 40  -> orange
-            // 60  -> yellow
+            // Paleta de fuego:
+            // 0   -> rojo oscuro
+            // 20  -> rojo
+            // 40  -> naranja
+            // 60  -> amarillo
             var hue = Math.floor(energy * 45.0)
 
-            // High saturation, slightly lower in the hottest zones
+            // Saturación alta, algo menor en las zonas más calientes
             var sat = 255 - Math.floor(energy * 40.0)
             sat = clamp(sat, 180, 255)
 
-            // Brighter at the bottom, dimmer at the top
+            // Brillo más fuerte abajo, más tenue arriba
             var val = 40 + Math.floor(energy * 215.0)
             val = clamp(val, 0, 255)
 

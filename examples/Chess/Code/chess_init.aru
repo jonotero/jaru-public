@@ -1,17 +1,17 @@
 /*********************************************************
- * Chess Game - Initialization
+ * Juego de Ajedrez - Inicialización (Optimizado ESP32)
  *********************************************************/
 
 import "chess_types"
 
-// Global board
+// Tablero global
 var Tablero = []
 var Estado = TEstado()
 
 func iniciar_tablero()
     var piezas = [TORRE, CABALLO, ALFIL, DAMA, REY, ALFIL, CABALLO, TORRE]
 
-    // Create 8x8 matrix
+    // Crear matriz 8x8
     for (var i = 0; i < 8; i++)
         Tablero.append([
             TCasilla(), TCasilla(), TCasilla(), TCasilla(),
@@ -19,30 +19,30 @@ func iniciar_tablero()
         ])
     end
 
-    // Place pieces
+    // Colocar las piezas
     for (var i = 0; i < 8; i++)
-        // Black pieces (row 0)
+        // Piezas negras (fila 0)
         Tablero[i][0].pieza = piezas[i]
         Tablero[i][0].color_pieza = NEGRO
 
-        // Black pawns (row 1)
+        // Peones negros (fila 1)
         Tablero[i][1].pieza = PEON
         Tablero[i][1].color_pieza = NEGRO
 
-        // White pawns (row 6)
+        // Peones blancos (fila 6)
         Tablero[i][6].pieza = PEON
         Tablero[i][6].color_pieza = BLANCO
 
-        // White pieces (row 7)
+        // Piezas blancas (fila 7)
         Tablero[i][7].pieza = piezas[i]
         Tablero[i][7].color_pieza = BLANCO
     end
 
-    // Reset state
+    // Reiniciar estado
     Estado = TEstado()
 end
 
-// Show board in console
+// Función para mostrar el tablero en consola
 func mostrar_tablero()
     println("    a  b  c  d  e  f  g  h")
     println("  +------------------------+")
@@ -58,7 +58,7 @@ func mostrar_tablero()
                 if (color == BLANCO) then
                     print(" ", letra, " ")
                 else
-                    print(" ", letra.lower(), " ")  // Lowercase for black
+                    print(" ", letra.lower(), " ")  // Minúscula para negras
                 end
             else
                 print(" . ")
@@ -70,14 +70,14 @@ func mostrar_tablero()
     println("    a  b  c  d  e  f  g  h")
 end
 
-// Convert move to algebraic notation
+// Función auxiliar para mostrar un movimiento en notación algebraica
 func movimiento_a_texto(mov)
     if (mov == nil) then
         return "null"
     end
 
     var cols = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
-    var filas = ['8', '7', '6', '5', '4', '3', '2', '1']  // as strings
+    var filas = ['8', '7', '6', '5', '4', '3', '2', '1']  // ya como strings
 
     var x0 = mov[0]
     var y0 = mov[1]

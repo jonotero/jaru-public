@@ -1,0 +1,26 @@
+use Http
+
+  // Opcional: timeout a 5s
+  println("Timeout de http")
+  Http.timeout(5000)
+  println("ClearHeaders")
+  // Cabeceras limpias y una Accept JSON
+  Http.clearHeaders()
+  println("SetHeaders")
+  Http.setHeader("Accept", "application/json")
+  println("http.get")
+  // GET (usa http para no requerir SSL si tu build de Windows no lleva OpenSSL)
+  //var data = Http.get("http://sitefrom90s.mypressonline.com/")
+  var data = Http.get("http://www.google.com/")
+  println("post http.get")
+  if (data != nil) then
+    print("GET OK")
+    println(" Status:")
+    println(Http.status())
+    println("Body:")
+    print(data)
+  else
+    println("GET ERROR")
+    println(Http.error())
+  end
+println("\nFin de la prueba !!!");

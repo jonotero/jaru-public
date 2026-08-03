@@ -130,7 +130,7 @@ strip.setBrightness(2)
 while (true)
 
     // -------------------------------------------------
-    // 1) Brutal startup
+    // 1) Arranque brutal
     // -------------------------------------------------
     flash(strip, 120, 120, 120, 80)
     flash(strip, 0, 0, 0, 50)
@@ -140,7 +140,7 @@ while (true)
     flash(strip, 0, 0, 0, 80)
 
     // -------------------------------------------------
-    // 2) Red horizontal sweep
+    // 2) Barrido rojo horizontal
     // -------------------------------------------------
     for (var y = 0; y < HEIGHT; y++)
         cls(strip)
@@ -151,7 +151,7 @@ while (true)
     end
 
     // -------------------------------------------------
-    // 3) Blue vertical sweep
+    // 3) Barrido azul vertical
     // -------------------------------------------------
     for (var x = 0; x < WIDTH; x++)
         cls(strip)
@@ -162,7 +162,7 @@ while (true)
     end
 
     // -------------------------------------------------
-    // 4) Rave checkerboard
+    // 4) Damero rave
     // -------------------------------------------------
     for (var i = 0; i < 8; i++)
         cls(strip)
@@ -172,7 +172,7 @@ while (true)
     end
 
     // -------------------------------------------------
-    // 5) Energy diagonal cross
+    // 5) Cruz energética diagonal
     // -------------------------------------------------
     for (var i = 0; i < 8; i++)
         cls(strip)
@@ -191,7 +191,7 @@ while (true)
     end
 
     // -------------------------------------------------
-    // 6) Concentric explosion
+    // 6) Explosión concéntrica
     // -------------------------------------------------
     cls(strip)
     drawBurst(strip, 0, 120, 120, 120)
@@ -219,7 +219,7 @@ while (true)
     pause(160)
 
     // -------------------------------------------------
-    // 7) Energy diamonds
+    // 7) Diamantes de energía
     // -------------------------------------------------
     for (var i = 0; i < 7; i++)
         cls(strip)
@@ -236,7 +236,7 @@ while (true)
     end
 
     // -------------------------------------------------
-    // 8) Color rain
+    // 8) Lluvia de color
     // -------------------------------------------------
     for (var t = 0; t < 20; t++)
         cls(strip)
@@ -246,7 +246,7 @@ while (true)
     end
 
     // -------------------------------------------------
-    // 9) Crazy finale
+    // 9) Final loco
     // -------------------------------------------------
     for (var i = 0; i < 4; i++)
         flash(strip, 120, 0, 0, 60)

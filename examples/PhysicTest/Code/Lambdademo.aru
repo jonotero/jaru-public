@@ -1,0 +1,66 @@
+// =====================================================
+// LambdaDemo.aru - lambdas fn en accion
+// Compilar con el compilador del LAB (el de produccion
+// aun no conoce fn).
+// =====================================================
+use Timer
+
+// 1) La estrella: callback inline, sin funcion global
+var tics = 0
+Timer.every(250, fn(id, p, u):
+    tics++
+    println("  tic ", tics, " (lambda inline)")
+    if (tics >= 3) then
+        Timer.clear(id)
+    end
+end)
+
+// 2) Factoria de closures: cada contador tiene su propia n capturada
+func contador(nombre)
+    var n = 0
+    return fn():
+        n = n + 1
+        println("  ", nombre, " = ", n)
+        return n
+    end
+end
+
+var vidas = contador("vidas")
+var monedas = contador("monedas")
+vidas()
+vidas()
+monedas()          // independiente: empieza en 1
+
+// 3) Tabla de despacho: lambdas en un mapa
+var comandos = {
+    "saluda": fn(quien): println("  Hola, ", quien, "!") end,
+    "dobla":  fn(x): println("  el doble es ", x * 2) end
+}
+var saluda = comandos["saluda"]
+var dobla = comandos["dobla"]
+saluda("Jon")
+dobla(21)
+
+// 4) this capturado: el boton se auto-gestiona
+class Boton
+    def init(nombre)
+        this.nombre = nombre
+        this.pulsado = 0
+    end
+    def handler()
+        return fn():
+            this.pulsado++
+            println("  boton ", this.nombre, " pulsado ", this.pulsado, " veces")
+        end
+    end
+end
+
+var ok = Boton("OK").handler()   // la instancia vive solo dentro de la lambda
+ok()
+ok()
+
+// esperar a que el timer acabe sus 3 tics
+var t0 = clock()
+while (tics < 3 and clock() - t0 < 3000)
+end
+println("fin de la demo")

@@ -21,15 +21,15 @@ while (true)
     for (var y = 0; y < HEIGHT; y++)
         for (var x = 0; x < WIDTH; x++)
 
-            // Centered coordinates
+            // Coordenadas centradas
             var fx = x - 3.5
             var fy = y - 3.5
 
-            // Point rotation
+            // Rotación del punto
             var rx = (fx * ca) - (fy * sa)
             var ry = (fx * sa) + (fy * ca)
 
-            // Rotating cross
+            // Cruz giratoria
             var v = 0
 
             if (Math.abs(rx) < 0.7) then
@@ -42,7 +42,7 @@ while (true)
 
             if (v == 1) then
 
-                // rainbow color that changes with rotation
+                // color arcoíris que cambia con la rotación
                 var hue = Math.floor((t * 80 + (rx + ry) * 20))
 
                 while (hue >= 360)
@@ -56,7 +56,7 @@ while (true)
                 strip.setHSV(xy(x,y), hue, 255, 255)
 
             else
-                // dark background
+                // fondo oscuro
                 strip.setPixel(xy(x,y), 0, 0, 10)
             end
 

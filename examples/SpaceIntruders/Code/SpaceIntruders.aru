@@ -1,16 +1,17 @@
 /*
 ====================================================================
-File: SpaceIntruders.aru
-Name: Galaxy Intruders
+Archivo: SpaceIntruders.aru
+Nuevo Nombre : Galaxy Intruders
 
-Description: Space Invaders-style game in JARU
+Descripcion: Implementacion del juego tipo Space Invaders en JARU
 
-Author: Jon Otero Fernandez
+Autor: Jon Otero Fernandez
 
-Year: 2023
+Año: 2023
 ====================================================================
 */
 
+// Importando los modulos necesarias
 use Display, Sprite, GC;
 
 //GC.factor(1.2);
@@ -19,65 +20,65 @@ var Plataforma=platform();
 println ("********************************")
 
 if (Plataforma==HW_ESP32) then
-    println ("Platform : ESP32")
+    println ("Plataforma : ESP32")
 elsif (Plataforma==HW_WIN32) then
-    println ("Platform : WIN32")
+    println ("Plataforma : WIN32")
 end;
 
 println ("********************************")
 
+// Referenciando el modulo de dibujo
 var draw = Display.draw;
 
 // ======================================================
-// Game constants
+// Definicion de las constantes del juego
 // ======================================================
 
-const ANCHO = 320;              // Window width
-const ALTO = 240;               // Window height
-const SHIP_SPEED = 2;           // Player ship speed
-const PBULLET_SPEED=-5          // Player bullet speed
-var INVADER_SPEED = 2;          // Initial invader speed
-const TOTAL_INVADERS = 55;      // Total number of invaders
-const INVADER_MILLIS_MAX = 900; // Max interval (ms) with all invaders alive
-const INVADER_MILLIS_MIN = 60;  // Min interval (ms) with 1 invader alive
-var INVADER_MILLIS = INVADER_MILLIS_MAX;  // Current interval, recalculated on each kill
-var invaderDirection = 1;       // Initial invader direction
-var ufoDirection = 1;           // Direction the UFO will move
+const ANCHO = 320;              // Ancho de la ventana del juego
+const ALTO = 240;               // Altura de la ventana del juego
+const SHIP_SPEED = 2;           // Velocidad de la nave espacial
+const PBULLET_SPEED=-5          // Velocidad de la bala del jugador
+var INVADER_SPEED = 2;          // Velocidad inicial de los invasores
+const TOTAL_INVADERS = 55;      // Número total de invasores
+const INVADER_MILLIS_MAX = 900; // Intervalo mÃ¡ximo (ms) con todos los invaders vivos
+const INVADER_MILLIS_MIN = 60;  // Intervalo mÃ­nimo (ms) con 1 invader vivo
+var INVADER_MILLIS = INVADER_MILLIS_MAX;  // Intervalo actual, se recalcula con cada kill
+var invaderDirection = 1;       // DirecciÃ³n inicial de los invasores
+var ufoDirection = 1;           // DirecciÃ³n en la que se moverÃ¡ la nave UFO
 
-// Possible UFO score values
+// Lista de posibles puntuaciones del UFO
 const UFO_SCORES = [50, 100, 150, 300];
 
-// Invader shooting probability
-const INVADER_SHOOT_PROBABILITY = 1;    // 1% chance to fire
-const PROJECTILE_INVADERS_SPEED= 4;     // Invader projectile speed
-var MAX_PROJECTILE_INVADERS=1;          // Max simultaneous invader projectiles (changes with difficulty)
+// Variables para la probabilidad de disparo de los invaders
+const INVADER_SHOOT_PROBABILITY = 1;    // 1% de probabilidad de disparar
+const PROJECTILE_INVADERS_SPEED= 4;     // Velocidad de los proyectiles de los invaders
+var MAX_PROJECTILE_INVADERS=1;          // NÃºmero mÃ¡ximo de proyectiles de los invaders, cambia con la dificultad
 var MSG_GAME_OVER=false;
 var MSG_PLAYER_DEAD=false;
 
-var HiScore=0;      // High score
-var PlayerScore=0;  // Player score
-var PlayerLives=3;  // Player lives
-
+var HiScore=0;      // PuntuaciÃ³n mÃ¡s alta
+var PlayerScore=0;  // PuntuaciÃ³n del jugador
+var PlayerLives=3;  // Vidas del usuario.
 
 
 // ======================================================
-// Load sprite images
+// Carga de las imÃ¡genes para los sprites
 // ======================================================
 println (">>> Inicio <<<",memUse() )
 const imgGameOver=Bitmap.load("Images/gameover.bmp")
 println ("  | Mem : ",memUse() )
-var imgPlayer = [Bitmap.load("Images/Player.bmp")];                  // Player ship image
+var imgPlayer = [Bitmap.load("Images/Player.bmp")];                  // Imagen de la nave espacial del jugador
 println ("  | Mem : ",memUse() )
-var imgProjectile_Player = [Bitmap.load("Images/BulletPlayer.bmp")];  // Player projectile image
+var imgProjectile_Player = [Bitmap.load("Images/BulletPlayer.bmp")];  // Imagen del proyectil del jugador
 println ("  | Mem : ",memUse() )
 var imgProjectile_Invaders = [
     Bitmap.load("Images/BulletA1.bmp"),
     Bitmap.load("Images/BulletA2.bmp"),
     Bitmap.load("Images/BulletA3.bmp"),
     Bitmap.load("Images/BulletA4.bmp")
-];  // Invader projectile images
+];  // ImÃ¡genes de los proyectiles de los invaders
 println ("  | Mem : ",memUse() )
-// Invader and explosion images
+// ImÃ¡genes de los invasores y de la explosiÃ³n de estos
 var imgInvaders = [
     Bitmap.load("Images/A1.bmp"),
     Bitmap.load("Images/A2.bmp"),
@@ -88,7 +89,8 @@ var imgInvaders = [
     Bitmap.load("Images/EnemyExp.bmp")
 ];
 println ("  | Mem : ",memUse() )
-// Shelter images
+
+// ImÃ¡genes de los shelters
 var imgShelter=[
     Bitmap.load("Images/Shelter0.bmp"),
     Bitmap.load("Images/Shelter1.bmp"),
@@ -109,18 +111,18 @@ println ("  | Mem : ",memUse() )
 
 
 // ==============================================================================================
-// Game class definitions
+// DefiniciÃ³n de las clases del juego
 // ==============================================================================================
 
 // =======================================================
-// Player ship class
+// Clase para la nave del player
 // =======================================================
 class PlayerShip
     def init()
         this.speed=0.0;
         this.sprite=Sprite.new(160,220,imgPlayer[0])
 
-        // Player explosion sprite
+        // Sprite con la explosion del player.
         this.explosionSprite=Sprite.new(160,220,imgPlayerExplosion[0]);
         this.explosionSprite.addImage(imgPlayerExplosion[1]);
         this.explosionSprite.frameRate=100;
@@ -128,7 +130,7 @@ class PlayerShip
 end
 
 // =======================================================
-// Player projectile class
+// Clase para los proyectiles del player
 // =======================================================
 class ProjectilePlayer
     def init(pos_x, pos_y, direction, spriteImage)
@@ -142,7 +144,7 @@ class ProjectilePlayer
 end
 
 // =======================================================
-// Invader explosion class
+// Clase para las explosiones de los invader
 // =======================================================
 class InvaderExplosion
     def init(x,y)
@@ -152,7 +154,7 @@ class InvaderExplosion
 end
 
 // =======================================================
-// Player shelter class
+// Clase para las construcciones que protegen al player
 // =======================================================
 class ShelterBuild
     def init(x,y)
@@ -174,7 +176,7 @@ class ShelterBuild
         this.sprites=arraySprites
     end
 
-    // Reset shelter state
+    // Reinicia el estado de las protecciones
     def reset()
         for (var i=0;i<3;i++)
             this.sprites[0][i].active=true;
@@ -186,7 +188,7 @@ class ShelterBuild
 end
 
 // =======================================================
-// UFO explosion class
+// Clase para la explosion del UFO
 // =======================================================
 class UfoExplosion
     def init(x,y)
@@ -195,30 +197,32 @@ class UfoExplosion
     end
 end
 
-// UFO and explosion images
+// =======================================================
+// Imagen del UFO y de su explosiÃ³n
+// =======================================================
 var imgUFO = Bitmap.load("Images/space_ufo.bmp");
 var imgUFOExplosion=Bitmap.load("Images/ufoExplosion.bmp");
 
 // ======================================================
-// Sprite creation
+// CreaciÃ³n de los sprites
 // ======================================================
-var UFO = Sprite.new(0,40,imgUFO);  // UFO sprite
-UFO.active=false;                   // UFO initially inactive
-var ufoExplosion=UfoExplosion(0,0); // UFO explosion sprite
+var UFO = Sprite.new(0,40,imgUFO);  // Sprite de la nave UFO
+UFO.active=false;                  // UFO inicialmente inactivo
+var ufoExplosion=UfoExplosion(0,0); // Sprite de la explosiÃ³n de la nave UFO
 
-// Invader projectile array
+// Array de los proyectiles de los invaders
 var invaderProjectiles = [];
 
-// Invader explosion array
+// Array de las explosiones de los invaders
 var invaderExplosions=[];
 
-// Player projectile array
+// Array de los proyectiles del jugador
 var projectiles = []
 
-// Invader array
+// Array con los invaders
 var invaders[11][5]
 
-// Create invader sprites in the array
+// Crear los sprites de los invaders en el array
 for (var i=0;i<11;i++)
     invaders[i][0]=Sprite.new(10+(i*16),60,imgInvaders[0]);
     invaders[i][0].addImage(imgInvaders[1]);
@@ -242,7 +246,7 @@ for (var i=0;i<11;i++)
 end
 
 // ======================================================================
-// Resets invader positions for a new game
+// Inicia la posicion de los invaders para el comienzo de la partida
 // ======================================================================
 func IniciarInvaders()
     for (var i=0;i<11;i++)
@@ -270,7 +274,9 @@ func IniciarInvaders()
     INVADER_MILLIS=INVADER_MILLIS_MAX;
 end
 
-// Invader shooting
+/*
+  Disparos de los invaders
+*/
 func InvaderShoot(invader)
     var newProjectile = ProjectilePlayer(invader.x, invader.y, PROJECTILE_INVADERS_SPEED , imgProjectile_Invaders[0]);
     newProjectile.sprite.addImage(imgProjectile_Invaders[1]);
@@ -279,7 +285,9 @@ func InvaderShoot(invader)
     invaderProjectiles.append(newProjectile);
 end
 
-// Player shooting
+/*
+  Disparo del player
+*/
 func PlayerShoot(ship)
     var bullet = ProjectilePlayer(ship.sprite.x + ship.sprite.width / 2, ship.sprite.y, PBULLET_SPEED, imgProjectile_Player[0]);
     projectiles.append(bullet);
@@ -292,26 +300,42 @@ func ShowGameOver()
 end
 
 
-// Moves all invaders; reverses direction and drops down when hitting an edge
+/*
+  Funcion para mover los invaders.
+  La funcion toma como argumento el array de invaders, que es una array de sprites.
+*/
 func MoveInvaders(invaderArray)
+    // Iterar sobre todos los invaders.
     foreach (var iter in invaderArray)
+        // Mover cada invader en la direcciÃ³n actual (invaderDirection)
+        // multiplicada por la velocidad del invader.
         iter.x=iter.x + invaderDirection * INVADER_SPEED;
-        iter.nextFrame()
+        iter.nextFrame() // Avanzar el frame del sprite.
     end
 
+    // Variable booleana para comprobar si algÃºn
+    // invader ha golpeado el borde de la pantalla.
     var hitEdge = false;
 
     foreach (var iter in invaderArray)
-        if (iter.active) then
+        // Si el invader estÃ¡ en el borde izquierdo o derecho de la pantalla,
+        // entonces se considera que ha golpeado el borde.
+        if (iter.active) then // Solo los sprites estan activos
             if (iter.x <= 0 or iter.x + iter.width >= ANCHO-80) then
                 hitEdge = true;
+                // Interrumpir el bucle, ya que no necesita verificar mÃ¡s invaders
+                // si ya ha encontrado uno que ha golpeado el borde.
                 break;
             end
         end;
     end
 
+    // Si algÃºn invader golpeÃ³ el borde de la pantalla, entonces necesitamos
+    // cambiar la direcciÃ³n de todos los invaders y moverlos hacia abajo.
     if (hitEdge) then
+        // Cambiar la direcciÃ³n de los invaders.
         invaderDirection = -invaderDirection;
+        // Mover cada invader hacia abajo 8 px.
         foreach (var iter in invaderArray)
             iter.y+= 8;
             if (iter.active and iter.y>220) then
@@ -324,16 +348,25 @@ func MoveInvaders(invaderArray)
     end
 end
 
-// AI player movement: 70% continue, 15% turn, 15% stop
+// =================================================================================
+// FunciÃ³n de actualizaciÃ³n en movimiento de la nave del player
+//
+// Simula la toma de decisiones de un jugador humano:
+// La nave tiene una probabilidad de continuar en la misma direcciÃ³n,
+// una probabilidad de cambiar de direcciÃ³n y una probabilidad de quedarse quieta.
+// =================================================================================
 func MovePlayerShip(ship)
     var decision = random() mod 100;
     if (decision < 70) then
+        // 70% de probabilidad de continuar en la misma direcciÃ³n
         ship.sprite.x+= ship.speed;
     elsif (decision < 85) then
+        // 15% de probabilidad de cambiar de direcciÃ³n
         ship.speed = -ship.speed;
         ship.sprite.x+=  ship.speed;
-    end
+    end // else: 15% de probabilidad de quedarse quieta
 
+    // Comprueba si la nave ha llegado al borde de la pantalla y, de ser asÃ­, invierte la direcciÃ³n
     if (ship.sprite.x <= 0) then
         ship.speed = SHIP_SPEED;
         ship.sprite.x=0;
@@ -354,13 +387,13 @@ func HandlePlayerInvaderCollisions()
         end
         INVADER_MILLIS = INVADER_MILLIS_MIN + (INVADER_MILLIS_MAX - INVADER_MILLIS_MIN) * numInvaders / TOTAL_INVADERS
 
-        // Clear active invader projectiles
+        // Limpiar proyectiles activos de los invaders
         foreach (var p in invaderProjectiles)
             p.sprite.active=false
         end
         invaderProjectiles = []
 
-        // Kill the player
+        // Matar al jugador
         MSG_PLAYER_DEAD = true
     end
 end
@@ -401,9 +434,10 @@ func HandleProjectileInvaderCollisions()
     end
 end
 
+
 func ProcessInvaderHits(listCol)
     for (var i=0; i<listCol.size(); i++)
-        println("Hits count: ", listCol.size())
+        println("TamaÃ±o de los Hits : ", listCol.size())
         listCol[i].active=false
         invaderExplosions.append(InvaderExplosion(listCol[i].x, listCol[i].y))
         var row = (listCol[i].y - invaders[0][0].y) / 18
@@ -440,18 +474,23 @@ end
 func HandlePlayerHit(projectil)
     println("HandlePlayerHit")
 
+    // Eliminar el proyectil que impactÃ³
     invaderProjectiles.remove(projectil)
 
+    // Limpiar el resto de proyectiles activos
     foreach (var p in invaderProjectiles)
         p.sprite.active=false
     end
     invaderProjectiles = []
 
-    println("Player hit")
+    println("Player alcanzado")
     MSG_PLAYER_DEAD = true
 end
 
-// Checks invader-shelter collisions; deactivates the hit shelter section
+/**
+ * Esta funciÃ³n verifica las colisiones entre los invasores y las construcciones
+ * Si una colisiÃ³n se detecta, el invasor y la secciÃ³n de la construcciÃ³n en la que colisionÃ³ se desactivarÃ¡n.
+ */
 func CheckInvaderShelterCollisions()
     foreach (var invader in invaders)
         if (invader.active and invader.y >= 168) then
@@ -465,10 +504,15 @@ func CheckInvaderShelterCollisions()
     end
 end
 
+// =========================================================================================
+// FunciÃ³n: CheckCollisions
+// DescripciÃ³n: Detecta y maneja las colisiones del juego.
+// Los objetos implicados incluyen al jugador, los invasores, los proyectiles y la nave UFO.
+// =========================================================================================
 func CheckCollisions()
     var listCol
 
-    // Player vs invader shots
+    // Detecta las colisiones entre el jugador y los disparos de los invaders
     foreach (var projectil in invaderProjectiles)
         if (projectil.sprite.hits(player.sprite)) then
             HandlePlayerHit(projectil)
@@ -476,31 +520,33 @@ func CheckCollisions()
         end
     end
 
-    // Player vs invaders
+    // Detecta colisiones entre el jugador y los invasores
     HandlePlayerInvaderCollisions()
 
-    // Invader shots vs shelters
+    // Detecta colisiones entre los proyectiles de los invasores y las construcciones
     HandleProjectileShelterCollisions()
 
-    // Remove collided projectiles
+    // Elimina los proyectiles que han colisionado
     CleanupProjectiles()
 
-    // Player shot vs invaders
+    // Detecta colisiones entre el proyectil del jugador y los invasores
     HandleProjectileInvaderCollisions()
 
-    // Player shot vs UFO
+    // Detecta colisiones entre el proyectil del jugador y la nave UFO
     HandleProjectileUFOCollisions()
 
-    // Invaders vs shelters
+    // Detecta colisiones entre los invaders y las construcciones
     CheckInvaderShelterCollisions()
 end
 
-// Invader logic: movement, shooting, explosions
+// ==============================================================================================
+// FunciÃ³n que se encarga de la lÃ³gica de los invasores (movimiento, disparo y explosiones)
+// ==============================================================================================
 func UpdateInvaders(current_time)
 
     MoveInvaders(invaders);
     HandleInvaderExplosions(current_time);
-    // Invaders shooting
+    // Invaders disparando
     if (invaderProjectiles.size()< MAX_PROJECTILE_INVADERS) then
         foreach (var invader in invaders)
             if (invader.active and random(0,100000) mod 100 < INVADER_SHOOT_PROBABILITY) then
@@ -510,10 +556,13 @@ func UpdateInvaders(current_time)
     end
 end
 
-// Player logic: movement and shooting
+// ==============================================================================================
+// FunciÃ³n que se encarga de la lÃ³gica del jugador (movimiento y disparo)
+// ==============================================================================================
 func UpdatePlayerAndProjectiles()
     MovePlayerAndProjectiles();
-    // Update invader projectiles
+    // Actualizar proyectiles de los invaders
+    // var ProjectilesList
     foreach (var projectile in invaderProjectiles)
         projectile.update();
         if (projectile.sprite.y > ALTO) then
@@ -523,13 +572,16 @@ func UpdatePlayerAndProjectiles()
     end
 end
 
-// UFO movement and explosion handling
+// ==============================================================================================
+// FunciÃ³n que se encarga del movimiento y las explosiones de la nave UFO
+// ==============================================================================================
 func UpdateUFO(current_time)
     var UFO_SPEED = 2;
+    // Mover la nave UFO
     if (UFO.active) then
         UFO.x = UFO.x + ufoDirection * UFO_SPEED;
 
-        // Deactivate UFO if it moves off screen
+        // Desactivar el UFO si se mueve fuera de la pantalla
         if (ufoDirection > 0 and UFO.x + UFO.width > ANCHO) then
             UFO.active=false;
         elsif (ufoDirection < 0 and UFO.x < 0) then
@@ -541,21 +593,27 @@ func UpdateUFO(current_time)
 end
 
 
-// Activate the UFO and alternate its direction
+// ==============================================================================================
+// FunciÃ³n para activar la nave UFO
+// ==============================================================================================
 func ActivateUFO()
     UFO.active=true;
+    // Alternar la direcciÃ³n en que se moverÃ¡ el UFO
     ufoDirection = -ufoDirection;
     if (ufoDirection > 0) then
-        UFO.x=0;  // start from left
+        UFO.x=0;  // iniciar desde la izquierda
     else
-        UFO.x=ANCHO - UFO.width;  // start from right
+        UFO.x=ANCHO - UFO.width;  // iniciar desde la derecha
     end
 end
 
-// Moves the player and updates projectiles
+// =======================================================================
+// Mueve el jugador y actualiza los proyectiles
+// =======================================================================
 func MovePlayerAndProjectiles()
     MovePlayerShip(player);
 
+    // Actualiza cada proyectil y elimina aquellos que estÃ¡n fuera de la pantalla
     foreach (var projectile in projectiles)
         projectile.update();
         if (projectile.sprite.y < 5) then
@@ -563,13 +621,15 @@ func MovePlayerAndProjectiles()
         end
     end
 
-    // Small chance to shoot if no projectiles are on screen
+    // Si no hay proyectiles en pantalla, el jugador tiene una pequeÃ±a probabilidad de disparar
     if (projectiles.size() < 1 and random() mod 100 < 2) then
         PlayerShoot(player);
     end
 end
 
-// Manages invader explosions
+// =======================================================================
+// Gestiona las explosiones de invasores
+// =======================================================================
 func HandleInvaderExplosions(current_time)
     foreach (var iter in invaderExplosions)
         if (current_time - iter.initime > 300) then
@@ -579,101 +639,128 @@ func HandleInvaderExplosions(current_time)
     end
 end
 
-// Manages UFO explosion
+// =======================================================================
+// Gestiona la explosion del UFO
+// =======================================================================
 func HandleUFOExplosions(current_time)
     if (current_time - ufoExplosion.initime > 500) then
         ufoExplosion.sprite.active=false;
     end
 end
 
-// Draws all game elements
+// ===============================================================================
+// Se encarga de una sola responsabilidad: dibujar los elementos del juego
+// ===============================================================================
 func DrawGame()
+    // Dibujar el sprite del jugador
     if (!MSG_PLAYER_DEAD) then
         draw.sprite(player.sprite);
     end
 
+    // Dibujar los proyectiles del player
     foreach (var iter in projectiles)
         draw.sprite(iter.sprite);
     end
 
+    // Dibujar las explosiones de los invasores
     foreach (var iter in invaderExplosions)
         draw.sprite(iter.sprite);
     end
 
+    // Dibujar los invasores
     draw.sprite(invaders);
 
+    // Dibujar los sprites de los proyectiles de los invasores
     foreach (var projectile in invaderProjectiles)
         draw.sprite(projectile.sprite)
     end
 
+    // Dibujar el UFO si estÃ¡ activo
     if (UFO.active) then
         draw.sprite(UFO);
+    // Dibuja la explosion del UFO si ha sido alcanzado
     elsif (ufoExplosion.sprite.active) then
         draw.sprite(ufoExplosion.sprite);
     end
 
+    // Construcciones de proteccion del player
     foreach (var iter in shelterList)
         draw.sprite(iter.sprites)
     end
 
+    // Mostrar el score en pantalla
     draw.text(10,5, "SCORE <1> HI-SCORE")
     draw.text(34,20,PlayerScore.toString()+"        " + HiScore.toString())
 
+    // Si se ha producido el Game Over pintarlo, pausar y salir.
     if (MSG_GAME_OVER) then
         ShowGameOver();
         return
     end;
 
+    // Actualizar la pantalla
     Display.update();
     //println("Memoria Usada: ",memUse())
     //println("Memoria Libre: ",memFree())
 
 end
 
-// Main per-frame update function
+// ===========================================================================
+// FunciÃ³n de actualizaciÃ³n del juego que se llamarÃ­a en cada fotograma
+// ===========================================================================
 func UpdateGame()
     var current_time = clock()
 
+    // Mueve la nave del jugador y gestiona los proyectiles
     if (current_time - lastPlayerMoveTime > 25) then
         UpdatePlayerAndProjectiles();
         lastPlayerMoveTime = current_time
     end;
 
+    // Detecta colisiones entre el jugador y los invasores
     if (current_time - lastCollisionCheck > 30) then
         CheckCollisions();
         lastCollisionCheck = current_time
     end;
 
+    // Mueve los invasores
     if (current_time - lastInvaderMoveTime > INVADER_MILLIS) then
         UpdateInvaders(current_time)
         lastInvaderMoveTime = current_time
     end
 
+
+
+    // Controla el movimiento y las explosiones de la nave UFO
     if (current_time - lastUFOMoveTime > 35) then
         UpdateUFO(current_time);
         lastUFOMoveTime=current_time;
     end
 
-    // Activate UFO every 20 seconds
+    // Activar la nave UFO cada 20 segundos
     if (current_time - lastUFOActiveTime > 20000) then
-        println("UFO activated!")
+        println("Ufo Activado!!!!");
         ActivateUFO();
         lastUFOActiveTime = current_time;
     end
 end
 
-// Initialize a new game
+// ===============================================
+// Iniciar una partida
+// ===============================================
 func InitGame()
-    INVADER_SPEED = 2;
+    INVADER_SPEED = 2;          // Velocidad inicial de los invasores
     INVADER_MILLIS=INVADER_MILLIS_MAX;
-    invaderDirection = 1;
-    ufoDirection = 1;
+    invaderDirection = 1;       // DirecciÃ³n inicial de los invasores
+    ufoDirection = 1;           // DirecciÃ³n en la que se moverÃ¡ la nave UFO
     IniciarInvaders();
 
+    // Iniciar los shelters
     foreach (var shelter in shelterList)
         shelter.reset();
     end;
 
+    // Actualizar el Hi-Score si procede.
     if (PlayerScore > HiScore) then
         HiScore=PlayerScore
     end;
@@ -684,6 +771,7 @@ end;
 // ===================================================================================================================
 //                                                  Main
 // ===================================================================================================================
+// Inicio de pantalla
 Display.viewWidth=240;
 Display.viewHeight=240;
 Display.open(ANCHO,ALTO);
@@ -692,10 +780,10 @@ if (platform()==HW_ESP32) then
    pause(3000)
 else
     Display.update();
-    pause(3000)
+    pause(3000) // PequeÃ±a pausa para que se vea la pantalla
 end
 
-// Create player
+// Creacion del player
 var player=PlayerShip();
 
 player.speed=SHIP_SPEED;
@@ -706,9 +794,12 @@ lastPlayerMoveTime=lastCollisionCheck=lastUFOActiveTime=lastUFOMoveTime=lastInva
 
 var numInvaders=55;
 
-// Player shelters
+//
+// Lista con construcciones de proteccion del player
 var shelterList=[]
 
+//
+// Construcciones de proteccion del player
 for (var i=0;i<4;i++)
     shelterList.append(ShelterBuild(20+(i*60),180))
 end
@@ -716,59 +807,75 @@ end
 //println("Pulsa una tecla para continuar")
 //println("view_width ",Display.view_width)
 //input();
+// Obtiene el tiempo de inicio
 var start = clock()
 
-// Main game loop
+// El bucle principal del juego
 for (;;)
+    // Inicializa el nÃºmero de vidas del jugador
     PlayerLives = 3;
 
+    // ContinÃºa jugando hasta que no queden vidas o hasta que el juego termine
     while(PlayerLives >= 0 and not MSG_GAME_OVER)
+        // Juega hasta que todos los invasores sean derrotados o hasta que el jugador muera
         while (numInvaders != 0 and not MSG_PLAYER_DEAD)
+            // Actualiza el estado del juego
             UpdateGame()
 
+            // Comprueba si es el momento de dibujar el juego
             if (clock() - start > 30) then
+                // Dibuja el juego y actualiza el tiempo de inicio
                 DrawGame()
                 start = clock()
             end
         end
 
+        // Si el jugador ha muerto
         if (MSG_PLAYER_DEAD) then
+            // Posiciona la explosiÃ³n en el lugar del jugador
             player.explosionSprite.x=player.sprite.x
             player.explosionSprite.y=player.sprite.y
 
+            // Dibuja la explosiÃ³n durante 2000 milisegundos
             while (clock()-start < 2000 )
                 draw.sprite(player.explosionSprite)
                 DrawGame()
             end
 
+            // Desactiva la explosiÃ³n y actualiza la pantalla
             player.explosionSprite.active=false
             DrawGame()
 
-            println("Memory used: ",memUse())
-            println("Memory free: ",memFree())
+            // Hace una pausa de 2000 milisegundos
+            println("Memoria Usada: ",memUse())
+            println("Memoria Libre: ",memFree())
             pause(2000)
         end
 
+        // Reactiva la explosiÃ³n, disminuye las vidas del jugador y restablece la bandera de muerte del jugador
         player.explosionSprite.active=true
         PlayerLives = PlayerLives - 1
         println(PlayerLives)
         MSG_PLAYER_DEAD = false
 
+        // Si no quedan vidas, finaliza el juego
         if (PlayerLives == 0) then
             MSG_GAME_OVER = true
         end
 
+        // Imprime el nÃºmero de vidas restantes del jugador
         println("PlayerLives : ",PlayerLives)
     end
     DrawGame();
+    // Reinicia la bandera del juego
     MSG_GAME_OVER = false
     InitGame();
 end
-println("Memory used: ",memUse())
-println("Memory free: ",memFree())
+println("Memoria Usada: ",memUse())
+println("Memoria Libre: ",memFree())
 DrawGame();
-println("Invader count: ", numInvaders)
+println("Numero de invasores: ", numInvaders)
 println("Score : ",PlayerScore)
-print("Finished")
+print("Finalizado")
 readLine();
 Display.close();

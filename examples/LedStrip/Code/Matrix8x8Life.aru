@@ -3,7 +3,7 @@ use LED
 const WIDTH  = 8
 const HEIGHT = 8
 
-// ─── Basic helpers ────────────────────────────────────────────
+// ─── helpers básicos ──────────────────────────────────────────
 func xy(x, y)
     return y * WIDTH + x
 end
@@ -23,9 +23,9 @@ func flashAll(strip, r, g, b, ms)
     pause(ms)
 end
 
-// ─── Game of Life logic ───────────────────────────────────────
+// ─── lógica del Juego de la Vida ─────────────────────────────
 
-// Returns the value of a cell; edges = dead
+// Devuelve el valor de una célula; bordes = muertos
 func getCell(grid, x, y)
     if (x < 0 or x >= WIDTH or y < 0 or y >= HEIGHT) then
         return 0
@@ -33,7 +33,7 @@ func getCell(grid, x, y)
     return grid[y * WIDTH + x]
 end
 
-// Counts the 8 living neighbors
+// Cuenta los 8 vecinos vivos
 func countNeighbors(grid, x, y)
     var n = 0
     n = n + getCell(grid, x - 1, y - 1)
@@ -47,11 +47,11 @@ func countNeighbors(grid, x, y)
     return n
 end
 
-// Draws the grid colored by cell age:
-//   newborn (age=1) → vivid cyan
-//   young   (age<5) → bright green
-//   old    (age>=5) → dark green
-//   dead            → near black
+// Dibuja el grid con color según edad de cada célula:
+//   recién nacida (age=1) → cian vivo
+//   joven        (age<5)  → verde brillante
+//   veterana     (age>=5) → verde oscuro
+//   muerta               → casi negro
 func drawGrid(strip, grid, age)
     for (var y = 0; y < HEIGHT; y++)
         for (var x = 0; x < WIDTH; x++)
@@ -74,7 +74,7 @@ func drawGrid(strip, grid, age)
     end
 end
 
-// Applies Conway's rules; updates grid and age in the same pass
+// Aplica las reglas de Conway; actualiza grid y age en el mismo paso
 func evolve(grid, nxt, age)
     for (var y = 0; y < HEIGHT; y++)
         for (var x = 0; x < WIDTH; x++)
@@ -84,20 +84,20 @@ func evolve(grid, nxt, age)
 
             if (alive == 1) then
                 if (n == 2 or n == 3) then
-                    // Survives → ages
+                    // Sobrevive → envejece
                     nxt[idx] = 1
                     age[idx] = age[idx] + 1
                     if (age[idx] > 12) then
                         age[idx] = 12
                     end
                 else
-                    // Dies from loneliness or overcrowding
+                    // Muere por soledad o superpoblación
                     nxt[idx] = 0
                     age[idx] = 0
                 end
             else
                 if (n == 3) then
-                    // Born → age = 1 (cyan)
+                    // Nace → age = 1 (cian)
                     nxt[idx] = 1
                     age[idx] = 1
                 else
@@ -108,21 +108,21 @@ func evolve(grid, nxt, age)
         end
     end
 
-    // Copy nxt → grid
+    // Copiar nxt → grid
     for (var i = 0; i < 64; i++)
         grid[i] = nxt[i]
     end
 end
 
-// Random population ~50%
+// Población aleatoria ~50 %
 func randomFill(grid, age)
     for (var i = 0; i < 64; i++)
         grid[i] = random(0, 1)
-        age[i]  = grid[i]      // live cells start with age=1
+        age[i]  = grid[i]      // vivas empiezan con age=1
     end
 end
 
-// Counts live cells (to detect extinction/stagnation)
+// Cuenta células vivas (para detectar extinción/estancamiento)
 func countAlive(grid)
     var total = 0
     for (var i = 0; i < 64; i++)
@@ -131,20 +131,20 @@ func countAlive(grid)
     return total
 end
 
-// ─── Setup ───────────────────────────────────────────────────
+// ─── setup ───────────────────────────────────────────────────
 var strip = LED.new(17, 64)
 strip.setBrightness(128)
 randomize(clock())
 
-// Three flat arrays of 64 elements
+// Tres arrays planos de 64 elementos
 var grid = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 var nxt  = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 var age  = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
 
-// ─── Main loop ───────────────────────────────────────────────
+// ─── loop principal ──────────────────────────────────────────
 while (true)
 
-    // Startup flash: green → black blink
+    // Flash de arranque: parpadeo verde → negro
     flashAll(strip, 0, 100, 40, 120)
     flashAll(strip, 0, 0, 0, 80)
     flashAll(strip, 0, 60, 20, 80)
@@ -165,7 +165,7 @@ while (true)
 
         var alive = countAlive(grid)
 
-        // Detect extinction or stagnation
+        // Detección de extinción o estancamiento
         if (alive == prevAlive) then
             stall = stall + 1
         else
@@ -174,7 +174,7 @@ while (true)
         prevAlive = alive
 
         if (stall >= 24 or alive == 0) then
-            // Fade to black and reseed
+            // Fade a negro y semilla nueva
             flashAll(strip, 0, 0, 0, 500)
             randomFill(grid, age)
             stall     = 0

@@ -37,14 +37,14 @@ while (true)
     for (var y = 0; y < HEIGHT; y++)
         for (var x = 0; x < WIDTH; x++)
 
-            // Centered coordinates
+            // Coordenadas centradas
             var fx = x - 3.5
             var fy = y - 3.5
 
-            // Distance to center
+            // Distancia al centro
             var d = Math.sqrt(fx * fx + fy * fy)
 
-            // Classic plasma: mix of several waves
+            // Plasma clásico: mezcla de varias ondas
             var v1 = Math.sin(fx * 0.90 + t)
             var v2 = Math.sin((fy * 1.10) - (t * 1.30))
             var v3 = Math.sin((fx + fy) * 0.70 + (t * 0.80))
@@ -52,10 +52,10 @@ while (true)
 
             var plasma = v1 + v2 + v3 + v4
 
-            // Map approx. from [-4..4] to [0..359]
+            // Mapear aprox. de [-4..4] a [0..359]
             var hue = Math.floor(((plasma + 4.0) / 8.0) * 359.0)
 
-            // Slight variation in saturation and value
+            // Un poco de variación en saturación y valor
             var sat = 255
             var val = 160 + Math.floor((Math.sin(d * 2.5 - t * 2.0) + 1.0) * 40.0)
 

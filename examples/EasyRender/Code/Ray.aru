@@ -48,7 +48,7 @@ class Ray : Vector
 
     // Returns the distance from the ray origin to the given point,
     // assuming the point lies on the ray
-    // NOTE: This function is currently unused
+    // NO SE ESTA USANDO ESTA FUNCION ; HAY QUE AVERIGUAR EL MOTIVO
 
     def Distance(v1)
         var d;

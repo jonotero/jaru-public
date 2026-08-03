@@ -20,7 +20,7 @@ func cls(strip)
 end
 
 // --------------------------------
-// Draw 3x5 digit
+// Dibujar número 3x5
 // --------------------------------
 func drawDigit(strip, digit, ox, oy, r, g, b)
 
@@ -50,22 +50,22 @@ func drawDigit(strip, digit, ox, oy, r, g, b)
 end
 
 // --------------------------------
-// Draw number (10)
+// Dibujar número (10)
 func drawNumber(strip, n)
 
     if (n == 10) then
-        // 1   0   with one empty column between them
+        // 1   0   con una columna vacía entre ellos
         drawDigit(strip, 1, 0, 1, 0, 150, 255)
         drawDigit(strip, 0, 4, 1, 0, 150, 255)
     else
-        // centered number
+        // número centrado
         drawDigit(strip, n, 2, 1, 0, 150, 255)
     end
 
 end
 
 // --------------------------------
-// Explosion
+// Explosión
 // --------------------------------
 func explosion(strip)
 
@@ -97,7 +97,7 @@ func explosion(strip)
 
     end
 
-    // final flash
+    // flash final
     for (var i = 0;i < 3;i++)
         for (var y = 0;y < HEIGHT;y++)
             for (var x = 0;x < WIDTH;x++)

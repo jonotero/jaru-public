@@ -92,7 +92,7 @@ end;
 
 // ===================================================
 //
-// Button handling
+// Gestion de los botones
 //
 // ===================================================
 class Buttons
@@ -187,6 +187,9 @@ class Vector2
         // return a perpendicular vector
         return Vector2(-this.y, this.x, this.color)
     end
+    // ----------------------------------------------------
+    // Comprueba si un vector es igual a otro
+    // ----------------------------------------------------
     operator == (v1,v2)
         return ((v1.x==v2.x) and (v1.y==v2.y))
     end;
@@ -537,7 +540,7 @@ class Table
                 else
                     this.game_over = true
                 end
-                ball_count -= 1  // Decrement counter since a ball was removed
+                ball_count -= 1  // Disminuir el contador ya que se eliminó una bola
             else
                 i += 1
             end
@@ -705,6 +708,7 @@ end
 
 // ------------ Text routines ------------
 
+// TODO: El fnt que es el font no lo uso, pero no es mala idea hacerlo de esta manera
 func center_on(text, y)
     // center text on y
     var x = (WIDTH >> 1) - ((10 * len(text)) >> 1)
@@ -738,7 +742,7 @@ func ball_countdown()
     // countdown before the ball is released"""
     var bold_font;
     for (var i = 3; i > 0; i--)
-        center_on(i.toString(), 1.3);
+        center_on(i.toString(), 1.3); // Nota: la interpolación de cadenas es específica de Python; tendrías que adaptar esta línea para C.
         pause(1000);
         //println("Memoria usada : ",memuse())
         //println("Memoria libre : ",memfree())
@@ -833,10 +837,10 @@ end
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 /////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-var FPS=60 // Windows default
+var FPS=60 // Para Windows
 // ------------ set constants  ------------
 if (platform()==HW_ESP32) then
-   FPS = 30   // ESP32
+   FPS = 25   // ESP32
 end
 
 const FLIPPER_SPEED = 10;
@@ -850,18 +854,20 @@ println("MemFree : ", memFree())
 println("Orientation")
 Display.orientation(0);
 println("Mode 1")
-Display.mode(1) // Direct screen drawing mode
+Display.mode(1) // Display en modo 1 , pintado directo en pantalla
 println("Open")
-Display.open(240,240);
+Display.open(240,320);
+
+//Display.open(240,240);
 
 
-// Configure input per platform
+// Configurar input según la plataforma
 if (platform() == HW_ESP32) then
-    Input.map(0, 38)    // Left flipper - GPIO 38
-    Input.map(1, 39)    // Right flipper - GPIO 39
-else
-    Input.map(0, "Z")   // Left flipper - Z key
-    Input.map(1, "X")   // Right flipper - X key
+    Input.map(0, 38)    // Flipper izquierdo - GPIO 38
+    Input.map(1, 39)    // Flipper derecho - GPIO 39
+elsif (platform() == HW_WIN32 ) then
+    Input.map(0, "Z")   // Flipper izquierdo - Tecla Z
+    Input.map(1, "X")   // Flipper derecho - Tecla X
 end
 
 Display.update();
@@ -883,11 +889,11 @@ const SCALE_RADIUS = Math.min(SCALE_X, SCALE_Y)
 var buttons = Buttons()
 
 
-println("Starting Table")
+println("Iniciando Table")
 var table = Table()
-println("Table started")
+println("Table iniciado")
 start_game()
 
 
 Display.close()
-println("Completed successfully")
+println("Finalizado correctamente")

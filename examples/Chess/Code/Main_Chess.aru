@@ -1,5 +1,5 @@
 /*********************************************************
- * Chess Game - Main Program
+ * Juego de Ajedrez - Programa Principal (Optimizado ESP32)
  *********************************************************/
 use Display
 
@@ -14,7 +14,7 @@ const MAX_MOVIMIENTOS = 600
 
 randomize(clock()) //Random Seed
 
-// Initialize game
+// Inicializar el juego
 iniciar_tablero()
 iniciar_pantalla()
 
@@ -24,21 +24,21 @@ println("=== CHESS AI vs AI ===")
 println("Depth: ", PROFUNDIDAD_BUSQUEDA)
 println("")
 
-// Show initial position
+// Mostrar posicion inicial
 dibujar_partida("")
 
-// Main game loop
+// Bucle principal del juego
 while (!Estado.terminar and Estado.movimientos < MAX_MOVIMIENTOS)
     mostrar_tablero()
     println("")
 
-    // Show state
+    // Mostrar estado
     var color_texto = (Estado.turno == BLANCO) ? "WHITE" : "BLACK"
     println("Turn: ", color_texto)
     println("Move #", Estado.movimientos + 1)
     println("Memory used: ", memUse());
 
-    // Check for check and update screen
+    // Verificar jaque y actualizar pantalla
     var mensaje_ui = ""
     if (esta_en_jaque(Estado.turno)) then
         println("*** CHECK! ***")
@@ -49,10 +49,10 @@ while (!Estado.terminar and Estado.movimientos < MAX_MOVIMIENTOS)
 
     dibujar_partida(mensaje_ui)
 
-    // Measure time
+    // Medir tiempo
     var tiempo_inicio = clock()
 
-    // Generate AI move
+    // Generar movimiento de la IA
     var movimiento = generar_movimiento_ia(Estado.turno)
 
     var tiempo_mov = (clock() - tiempo_inicio) / 1000
@@ -61,7 +61,7 @@ while (!Estado.terminar and Estado.movimientos < MAX_MOVIMIENTOS)
         ultimo_mov_texto = movimiento_a_texto(movimiento)
         println("Move: ", ultimo_mov_texto, " (", tiempo_mov, "s)")
 
-        // Detect capture and animate
+        // Detectar captura y animar
         var x0 = movimiento[0]
         var y0 = movimiento[1]
         var x1 = movimiento[2]
@@ -75,7 +75,7 @@ while (!Estado.terminar and Estado.movimientos < MAX_MOVIMIENTOS)
 
         realizar_movimiento_seguro(x0, y0, x1, y1)
 
-        // Update move history
+        // Actualizar historial de movimientos
         if (color_actual == BLANCO) then
             penultimo_mov_b = ultimo_mov_b
             ultimo_mov_b = movimiento
@@ -88,14 +88,14 @@ while (!Estado.terminar and Estado.movimientos < MAX_MOVIMIENTOS)
             animar_destino(x1, y1)
         end
 
-        // Animate check or checkmate
+        // Animar jaque o mate
         if (Estado.terminar and esta_en_jaque(Estado.turno)) then
             animar_mate(Estado.turno)
         elsif (!Estado.terminar and esta_en_jaque(Estado.turno)) then
             animar_jaque(Estado.turno)
         end
     else
-        // No legal moves
+        // Sin movimientos legales
         mostrar_tablero()
         if (esta_en_jaque(Estado.turno)) then
             var ganador = (Estado.turno == BLANCO) ? "BLACK" : "WHITE"
@@ -111,7 +111,7 @@ while (!Estado.terminar and Estado.movimientos < MAX_MOVIMIENTOS)
     println("")
 end
 
-// Show final result
+// Mostrar resultado final
 var tiempo_total = (clock() - start) / 1000
 mostrar_tablero()
 println("=== GAME OVER ===")

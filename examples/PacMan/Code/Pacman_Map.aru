@@ -1,28 +1,28 @@
 // =================================================================
-// Pacman map data file
+// Fichero con los datos del mapa de Pacman
 // =================================================================
 
-// Global map variable
+// Variable global del mapa
 var mapa
 
-// Map dimensions
+// Dimensiones del mapa
 const MAP_FILAS=31
 const MAP_COLUMNAS=28
 const CELL_SIZE = 8
 
-// View coordinates where the map starts
+// Coordenadas dentro del view donde comienza el mapa
 const X_MAPINI = 0
 const Y_MAPINI = 24
 
 var totalDotsInLevel=0
 var totalDots = 0
-/*  Map
-0 = walls
-1 = paths
-2 = dots
-3 = power capsules
-4 = ghost house
-5 = bonus
+/*  Mapa
+0 para las paredes.
+1 para los caminos.
+2 para los puntos.
+3 para las cápsulas de poder.
+4 para la zona de inicio de los fantasmas.
+5 para Bonus
 */
 func IniMap()
     mapa =

@@ -5,13 +5,13 @@
 // Description:
 // Buzzer Test
 
-// Your code here
+use Sound
+
 println('Hello World from Buzzer');
 // ==========================================
 // Configuration
 // ==========================================
-// CHANGE THIS NUMBER to your pin (e.g. 4 or 45)
-const BUZZER_PIN=45
+const TONE_VOLUME = 180
 
 // ==========================================
 // Definition of Notes (Frequencies in Hz)
@@ -36,173 +36,120 @@ var gH  = 784 // Sol
 var gSH = 831 // Sol#
 var aH  = 880 // La
 
+var soundOk = Sound.init()
+println(soundOk)
+
+func PlayNote(freq, duration)
+    if (soundOk) then
+        Sound.tone(0, freq, TONE_VOLUME)
+        pause(duration)
+        Sound.stop(0)
+    else
+        pause(duration)
+    end
+end
+
 // ==========================================
 // The Imperial March
 // ==========================================
 println("Playing: Star Wars - Imperial March...")
 
 // --- Part 1 ---
-tone(BUZZER_PIN, a, 500)
-pause(500)
-tone(BUZZER_PIN, a, 500)
-pause(500)
-tone(BUZZER_PIN, a, 500)
-pause(500)
+PlayNote(a, 500)
+PlayNote(a, 500)
+PlayNote(a, 500)
 
-tone(BUZZER_PIN, f, 350)
-pause(350)
-tone(BUZZER_PIN, cH, 150)
-pause(150)
-tone(BUZZER_PIN, a, 500)
-pause(500)
-tone(BUZZER_PIN, f, 350)
-pause(350)
-tone(BUZZER_PIN, cH, 150)
-pause(150)
-tone(BUZZER_PIN, a, 650)
-pause(650)
+PlayNote(f, 350)
+PlayNote(cH, 150)
+PlayNote(a, 500)
+PlayNote(f, 350)
+PlayNote(cH, 150)
+PlayNote(a, 650)
 
 pause(500)
 
 // --- Part 2 ---
-tone(BUZZER_PIN, eH, 500)
-pause(500)
-tone(BUZZER_PIN, eH, 500)
-pause(500)
-tone(BUZZER_PIN, eH, 500)
-pause(500)
+PlayNote(eH, 500)
+PlayNote(eH, 500)
+PlayNote(eH, 500)
 
-tone(BUZZER_PIN, fH, 350)
-pause(350)
-tone(BUZZER_PIN, cH, 150)
-pause(150)
-tone(BUZZER_PIN, gS, 500)
-pause(500)
-tone(BUZZER_PIN, f, 350)
-pause(350)
-tone(BUZZER_PIN, cH, 150)
-pause(150)
-tone(BUZZER_PIN, a, 650)
-pause(650)
+PlayNote(fH, 350)
+PlayNote(cH, 150)
+PlayNote(gS, 500)
+PlayNote(f, 350)
+PlayNote(cH, 150)
+PlayNote(a, 650)
 
 pause(500)
 
 // --- Part 3 ---
-tone(BUZZER_PIN, aH, 500)
-pause(500)
-tone(BUZZER_PIN, a, 300)
-pause(300)
-tone(BUZZER_PIN, a, 150)
-pause(150)
-tone(BUZZER_PIN, aH, 500)
-pause(500)
+PlayNote(aH, 500)
+PlayNote(a, 300)
+PlayNote(a, 150)
+PlayNote(aH, 500)
 
-tone(BUZZER_PIN, gSH, 325)
-pause(325)
-tone(BUZZER_PIN, gH, 175)
-pause(175)
-tone(BUZZER_PIN, fSH, 125)
-pause(125)
-tone(BUZZER_PIN, fH, 125)
-pause(125)
-tone(BUZZER_PIN, fSH, 250)
-pause(250)
+PlayNote(gSH, 325)
+PlayNote(gH, 175)
+PlayNote(fSH, 125)
+PlayNote(fH, 125)
+PlayNote(fSH, 250)
 
 pause(325)
 
-tone(BUZZER_PIN, a, 250)
-pause(250)
-tone(BUZZER_PIN, dSH, 500)
-pause(500)
-tone(BUZZER_PIN, dH, 325)
-pause(325)
-tone(BUZZER_PIN, cSH, 175)
-pause(175)
-tone(BUZZER_PIN, cH, 125)
-pause(125)
-tone(BUZZER_PIN, b, 125)
-pause(125)
-tone(BUZZER_PIN, cH, 250)
-pause(250)
+PlayNote(a, 250)
+PlayNote(dSH, 500)
+PlayNote(dH, 325)
+PlayNote(cSH, 175)
+PlayNote(cH, 125)
+PlayNote(b, 125)
+PlayNote(cH, 250)
 
 pause(350)
 
 // --- Part 4 ---
-tone(BUZZER_PIN, f, 250)
-pause(250)
-tone(BUZZER_PIN, gS, 500)
-pause(500)
-tone(BUZZER_PIN, f, 350)
-pause(350)
-tone(BUZZER_PIN, a, 125)
-pause(125)
-tone(BUZZER_PIN, cH, 500)
-pause(500)
-tone(BUZZER_PIN, a, 375)
-pause(375)
-tone(BUZZER_PIN, cH, 125)
-pause(125)
-tone(BUZZER_PIN, eH, 650)
-pause(650)
+PlayNote(f, 250)
+PlayNote(gS, 500)
+PlayNote(f, 350)
+PlayNote(a, 125)
+PlayNote(cH, 500)
+PlayNote(a, 375)
+PlayNote(cH, 125)
+PlayNote(eH, 650)
 
 pause(500)
 
 // --- Repeat Part 3 ---
-tone(BUZZER_PIN, aH, 500)
-pause(500)
-tone(BUZZER_PIN, a, 300)
-pause(300)
-tone(BUZZER_PIN, a, 150)
-pause(150)
-tone(BUZZER_PIN, aH, 500)
-pause(500)
+PlayNote(aH, 500)
+PlayNote(a, 300)
+PlayNote(a, 150)
+PlayNote(aH, 500)
 
-tone(BUZZER_PIN, gSH, 325)
-pause(325)
-tone(BUZZER_PIN, gH, 175)
-pause(175)
-tone(BUZZER_PIN, fSH, 125)
-pause(125)
-tone(BUZZER_PIN, fH, 125)
-pause(125)
-tone(BUZZER_PIN, fSH, 250)
-pause(250)
+PlayNote(gSH, 325)
+PlayNote(gH, 175)
+PlayNote(fSH, 125)
+PlayNote(fH, 125)
+PlayNote(fSH, 250)
 
 pause(325)
 
-tone(BUZZER_PIN, a, 250)
-pause(250)
-tone(BUZZER_PIN, dSH, 500)
-pause(500)
-tone(BUZZER_PIN, dH, 325)
-pause(325)
-tone(BUZZER_PIN, cSH, 175)
-pause(175)
-tone(BUZZER_PIN, cH, 125)
-pause(125)
-tone(BUZZER_PIN, b, 125)
-pause(125)
-tone(BUZZER_PIN, cH, 250)
-pause(250)
+PlayNote(a, 250)
+PlayNote(dSH, 500)
+PlayNote(dH, 325)
+PlayNote(cSH, 175)
+PlayNote(cH, 125)
+PlayNote(b, 125)
+PlayNote(cH, 250)
 
 pause(350)
 
 // --- End ---
-tone(BUZZER_PIN, f, 250)
-pause(250)
-tone(BUZZER_PIN, gS, 500)
-pause(500)
-tone(BUZZER_PIN, f, 375)
-pause(375)
-tone(BUZZER_PIN, cH, 125)
-pause(125)
-tone(BUZZER_PIN, a, 500)
-pause(500)
-tone(BUZZER_PIN, f, 375)
-pause(375)
-tone(BUZZER_PIN, cH, 125)
-pause(125)
-tone(BUZZER_PIN, a, 650)
-pause(650)
+PlayNote(f, 250)
+PlayNote(gS, 500)
+PlayNote(f, 375)
+PlayNote(cH, 125)
+PlayNote(a, 500)
+PlayNote(f, 375)
+PlayNote(cH, 125)
+PlayNote(a, 650)
 
 println("End of the song.")

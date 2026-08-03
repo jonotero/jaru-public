@@ -19,20 +19,20 @@ while (true)
     for (var y = 0; y < HEIGHT; y++)
         for (var x = 0; x < WIDTH; x++)
 
-            // Centered coordinates
+            // Coordenadas centradas
             var fx = x - 3.5
             var fy = y - 3.5
 
-            // Distance to center
+            // Distancia al centro
             var d = Math.sqrt(fx*fx + fy*fy)
 
-            // Expanding wave
+            // Onda que se expande
             var v = Math.sin(d * 2.0 - t)
 
-            // Convert to brightness 0..255
+            // Convertir a brillo 0..255
             var brightness = Math.floor((v + 1) * 127.5)
 
-            // Blue color with variable brightness
+            // Color azul con brillo variable
             strip.setPixel(xy(x,y), 0, 0, brightness)
 
         end

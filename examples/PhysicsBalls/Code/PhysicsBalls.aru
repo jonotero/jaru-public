@@ -1,13 +1,13 @@
 // ═══════════════════════════════════════════════════════════════════
-//  PhysicsBalls.aru  ·  JARU physics engine demo
-//  Features: gravity, ball-ball collisions, bouncing on static bumpers,
-//            floor accumulation and periodic explosion.
+//  PhysicsBalls.aru  ·  Demo del motor de físicas de JARU
+//  Muestra: gravedad, colisiones bola-bola, rebote en bumpers
+//           estáticos, acumulación en suelo y explosión periódica.
 //
 //  Sprites: Sprites/Bola{GR,GN,GV,GA,MR,MN,MV,MA,PR,PN,PV,PA}.spr
 // ═══════════════════════════════════════════════════════════════════
 use Display, Sprite, Scene
 
-// ─── Settings ────────────────────────────────────────────────────
+// ─── Configuración ────────────────────────────────────────────────
 const ANCHO       = 320
 const ALTO        = 240
 const GRAVEDAD    = 500
@@ -17,14 +17,14 @@ const BOOM_MS     = 6000   // milisegundos entre explosiones
 const BOOM_FUERZA = 800
 const MARGEN      = 16       // grosor de paredes y suelo
 
-// ─── Display ─────────────────────────────────────────────────────
+// ─── Pantalla ─────────────────────────────────────────────────────
 Display.open(ANCHO, ALTO)
 Display.mode(2)
 Display.autoClear = false
 var draw = Display.draw
 
 // ═══════════════════════════════════════════════════════════════════
-// LOAD BALL BITMAPS
+// CARGAR BITMAPS DE BOLAS (mismo esquema que ParticleWatch3)
 // ═══════════════════════════════════════════════════════════════════
 var bmpBallS1 = Sprite.load("Sprites/BolaPA.spr")
 var bmpBallS2 = Sprite.load("Sprites/BolaPV.spr")
@@ -45,20 +45,20 @@ var BALLS_SMALL  = [bmpBallS1, bmpBallS2, bmpBallS3, bmpBallS4]
 var BALLS_MEDIUM = [bmpBallM1, bmpBallM2, bmpBallM3, bmpBallM4]
 var BALLS_LARGE  = [bmpBallL1, bmpBallL2, bmpBallL3, bmpBallL4]
 
-// [bitmapArray, radius, centerX, centerY, mass]
+// [arrayBitmaps, radio, centroX, centroY, masa]
 var BALL_SIZES = [
-    [BALLS_SMALL,  3, 5, 5, 0.8],
-    [BALLS_MEDIUM, 5, 7, 7, 1.2],
-    [BALLS_LARGE,  7, 9, 9, 1.8]
+    [BALLS_SMALL,  3, 4, 4, 0.8],
+    [BALLS_MEDIUM, 5, 6, 6, 1.2],
+    [BALLS_LARGE,  7, 7, 7, 1.8]
 ]
 
-// ─── Scene (physics engine) ────────────────────────────────────
+// ─── Escena (motor de físicas) ────────────────────────────────────
 var escena = Scene.new()
 escena.stepRate = 60
 
 escena.gravity = GRAVEDAD
 
-// ─── Walls and floor (STATIC, rectangular colliders) ────────────
+// ─── Paredes y suelo (STATIC, colliders rectangulares) ────────────
 var paredIzq = Sprite.new(bmpBallS1)
 paredIzq.pos = [0, -2000]
 paredIzq.bodyType = Sprite.STATIC
@@ -81,7 +81,7 @@ suelo.collider = [0, 0, ANCHO, MARGEN]
 suelo.friction = 0.6
 escena.addSprite(suelo)
 
-// ─── Static bumpers ────────────────────────────────────────────
+// ─── Bumpers estáticos ────────────────────────────────────────────
 const BUMP_CONFIG = [
     [ 70,  96, 11],
     [163,  74, 13],
@@ -107,7 +107,7 @@ foreach (var cfg in BUMP_CONFIG)
 end
 
 // ═══════════════════════════════════════════════════════════════════
-// CREATE BALLS
+// CREAR BOLAS (mismo patrón que ParticleWatch3.crearBola)
 // ═══════════════════════════════════════════════════════════════════
 func crearBola(x, y, vx, vy)
     var sizeIndex = random(0, 2)
@@ -126,6 +126,7 @@ func crearBola(x, y, vx, vy)
     bola.bodyType = Sprite.DYNAMIC
     bola.mass = masa + random(0, 5) / 10.0
     bola.elasticity = random(70, 90) / 100.0
+    bola.friction = 0.2   // friccion entre bolas: disipa el giro por contacto
     bola.velocity = [vx, vy]
     bola.pivot = [0, 0]
     bola.collider = [centroX, centroY, radio]
@@ -146,7 +147,7 @@ for (var i = 0; i < N_BOLAS; i++)
     bolas.append(bola)
 end
 
-// ─── Main loop ──────────────────────────────────────────────────
+// ─── Bucle principal ──────────────────────────────────────────────
 var tAnterior = clock()
 var tBoom     = clock()
 var flashBoom = 0
@@ -159,7 +160,7 @@ while (true)
     tAnterior = ahora
     if (dt > 0.033) then dt = 0.033 end
 
-    // ── Periodic explosion ───────────────────────────────────────
+    // ── Explosión periódica ───────────────────────────────────────
     if (ahora - tBoom > BOOM_MS) then
         tBoom     = ahora
         flashBoom = 600
@@ -179,10 +180,10 @@ while (true)
         end
     end
 
-    // ── Physics ────────────────────────────────────────────────────
+    // ── Física ────────────────────────────────────────────────────
     escena.update()
 
-    // ── Recover off-screen balls ─────────────────────────────────
+    // ── Recuperar bolas fuera de pantalla ─────────────────────────
     foreach (var bola in bolas)
         if (bola.y > ALTO + 50 or bola.y < -500 or bola.x < -100 or bola.x > ANCHO + 100) then
             bola.pos = [MARGEN + 10 + random(0, ANCHO - MARGEN * 2 - 20), -10]
@@ -193,13 +194,13 @@ while (true)
     // ── Render ────────────────────────────────────────────────────
     draw.cls(0x090912)
 
-    // Visible floor
+    // Suelo visible
     draw.color = 0x222244
     draw.rect(0, ALTO - MARGEN, ANCHO, MARGEN, true)
     draw.color = 0x333388
     draw.line(MARGEN, ALTO - MARGEN, ANCHO - MARGEN, ALTO - MARGEN)
 
-    // Bumpers (double ring + center)
+    // Bumpers (doble aro + centro)
     for (var i = 0; i < N_BUMPERS; i++)
         var cx = bumpers[i].x + radiosBump[i]
         var cy = bumpers[i].y + radiosBump[i]
@@ -212,7 +213,7 @@ while (true)
         draw.circle(cx, cy, 3, true)
     end
 
-    // Balls (actual sprites)
+    // Bolas (sprites reales)
     Draw.sprite(bolas)
 
     // Flash BOOM
@@ -229,10 +230,10 @@ while (true)
 
     fpsCounter++
     if (ahora - lastFpsTime >= 1000) then
-        println("FPS: ", fpsCounter)
+        println("FPS: ", fpsCounter, " | mem use : ", memUse(), " | mem free : ", memFree())
         fpsCounter = 0
         lastFpsTime = ahora
     end
 
-    pause(8)
+    //pause(8)
 end
