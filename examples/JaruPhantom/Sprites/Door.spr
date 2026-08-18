@@ -1,0 +1,1 @@
+{"version": 1, "imageNodeID": 9, "imageRelativePath": "Images\\Sprites.bmp", "animation": {"fps": 8, "alignment": 0, "isTransparent": true, "backgroundColor": 16711935, "gridWidth": 8, "gridHeight": 24}, "regions": [{"x": 144, "y": 24, "width": 8, "height": 24}, {"x": 168, "y": 24, "width": 8, "height": 24}]}

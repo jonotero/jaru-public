@@ -1,0 +1,2536 @@
+// =================================================================
+// JaruMoves - homenaje a Army Moves (Dinamic, 1986) en su version
+//             de Amiga: cuatro fases encadenadas, panel inferior y
+//             mucho color de fondo.
+// Creado : 2026-08-07
+// Autor  : Jon Otero (con Claude)
+// Version: 1.0.0
+//
+// Fases:
+//   1  EL PUENTE   jeep sobre el puente, saltando los huecos
+//   2  HELICOPTERO vuelo rasante sobre la selva
+//   3  EL RIO      el buzo cruza a nado entre minas
+//   4  LA JUNGLA   a pie hasta el cuartel enemigo
+//
+// Controles (Windows): FLECHAS mover, Z disparar, X saltar,
+//                      D demo on/off, N saltar de fase, R reiniciar
+// ESP32 (generico)   : GPIO 39 arriba, 38 abajo, 37 disparo,
+//                      36 salto, 35 avanzar
+// Placas sin botones : modo demo permanente
+//
+// El juego ARRANCA EN MODO DEMO y se juega solo. En Windows se toma
+// el control con D.
+//
+// Personajes y vehiculos son sprites, el escenario es un tilemap sobre
+// GridMap, y quedan en primitivas los disparos, las explosiones y el
+// panel. Todo el arte lo genera Tools/gen_assets.py y la musica
+// Tools/build_music.py; no hay ningun fichero pintado a mano.
+//
+// El audio de la placa lo configura el firmware desde el perfil del
+// dispositivo: aqui no se arranca ningun codec (ver InitSound).
+// =================================================================
+
+use Display, Input, Sound, Math, Sprite, Bitmap, GridMap
+
+var draw = Display.draw
+
+import "JaruMoves_Tiles.aru"
+import "JaruMoves_Phases.aru"
+
+enum ACTION
+    LEFT, RIGHT, UP, DOWN, FIRE, JUMP, DEMO, SKIP, RESTART
+end
+
+enum GS
+    TITLE, PLAY, CLEAR, DEAD, OVER, WIN
+end
+
+// ----------------------------------------------------------------
+// Ajustes
+// ----------------------------------------------------------------
+const SCREEN_W = 320
+const SCREEN_H = 240
+const FRAME_PAUSE_WIN32 = 16
+
+// El juego se autojuega desde el primer fotograma; en Windows la
+// tecla D devuelve el mando al jugador.
+const START_IN_DEMO = true
+
+const START_LIVES = 3
+const MAX_ENERGY = 4
+
+// Valores base, medidos a ~40 FPS en Windows. SetupSpeed() los
+// reescala en las placas para que el juego dure lo mismo en
+// segundos. Las velocidades van por k y la gravedad por k*k: asi la
+// PARABOLA del salto es la misma en el mundo aunque haya menos
+// fotogramas para recorrerla.
+const SCROLL_BRIDGE = 1.70
+const SCROLL_HELI   = 1.95
+const SCROLL_RIVER  = 1.05
+const GRAVITY  = 0.50
+const JUMP_V   = 7.30
+const JEEP_VX  = 2.00
+const FOOT_VX  = 2.20
+const HELI_VX  = 2.40
+const HELI_VY  = 2.30
+const SWIM_VX  = 1.60
+const SWIM_VY  = 1.90
+const PSHOT_V  = 6.00
+const ESHOT_V  = 2.40
+const BOMB_V   = 1.60
+const FOE_SLOW = 0.55
+const FOE_FAST = 3.10
+
+// Temporizadores en fotogramas (valores de Windows)
+// Enfriamiento entre disparos. Corto a proposito: lo que hace que una
+// rafaga se LEA como rafaga es que los tiros vayan juntos y el silencio de
+// despues sea largo. Con 10 fotogramas entre tiros y 14-26 de pausa, los
+// dos intervalos se parecian y salia un chorro irregular en vez de grupos.
+const FIRE_COOL   = 7
+const INVULN      = 90
+const DEAD_FRAMES = 60
+const CLEAR_FRAMES = 150
+const TITLE_FRAMES = 260
+const OVER_FRAMES  = 200
+
+// Topes de entidades: mantienen estable el tiempo de cuadro del ESP32
+const MAX_FOES   = 14
+const MAX_PSHOTS = 12
+const MAX_ESHOTS = 18
+const MAX_BLASTS = 10
+const MAX_PICKS  = 4
+
+// Camara de la fase a pie: el heroe empuja el scroll desde esta X
+const CAM_PUSH = 132
+
+// Pixeles que sube una burbuja por fotograma. Es lo unico que hay que
+// tocar para cambiarles el ritmo: la trayectoria (cuanto se van quedando
+// atras segun suben) no depende de esto y no se deforma al bajarlo.
+const BUBBLE_RISE = 0.6
+
+// Valores efectivos (los fija SetupSpeed)
+var speedScale = 1.0
+var gravity = GRAVITY
+var jumpV = JUMP_V
+var scrollSpeed = SCROLL_BRIDGE
+var jeepVx = JEEP_VX
+var footVx = FOOT_VX
+var heliVx = HELI_VX
+var heliVy = HELI_VY
+var swimVx = SWIM_VX
+var swimVy = SWIM_VY
+var pShotV = PSHOT_V
+var eShotV = ESHOT_V
+var bombV = BOMB_V
+var foeSlow = FOE_SLOW
+var foeFast = FOE_FAST
+var fireCool = FIRE_COOL
+var invulnFrames = INVULN
+var deadFrames = DEAD_FRAMES
+var clearFrames = CLEAR_FRAMES
+var titleFrames = TITLE_FRAMES
+var overFrames = OVER_FRAMES
+
+// ----------------------------------------------------------------
+// Colores
+// ----------------------------------------------------------------
+const COL_PANEL     = 0x101410
+const COL_PANEL_HI  = 0x384038
+const COL_KHAKI     = 0x8C9C54
+const COL_KHAKI_DK  = 0x4C5828
+const COL_RED       = 0xE04030
+const COL_PSHOT     = 0xFFF0A0
+const COL_ESHOT     = 0xFF7050
+const COL_FLAME     = 0xFFB030
+const COL_SMOKE     = 0x808080
+
+// Musica: una pieza por fase. Los .jmu los compone Tools/build_music.py y
+// los deja en Build/Flash/Music; el .jms de al lado es la fuente para el
+// editor del IDE, que produce el mismo binario en su Build.
+const MUSIC_BRIDGE = "Music/Bridge.jmu"
+const MUSIC_AIR    = "Music/Air.jmu"
+const MUSIC_RIVER  = "Music/River.jmu"
+const MUSIC_JUNGLE = "Music/Jungle.jmu"
+
+// Fanfarrias, que suenan una sola vez: la corta al superar cada fase y la
+// larga al terminar el juego.
+const MUSIC_CLEAR = "Music/Clear.jmu"
+const MUSIC_WIN   = "Music/Victory.jmu"
+
+// En la placa la salida va por I2S directo y no hay ganancia de codec
+// detras que levante el nivel, asi que el maestro tiene que ir alto. Son
+// los mismos valores que usan JaruQuest (190) y JaruBunny (200).
+const MASTER_VOL_WIN32 = 110
+const MASTER_VOL_ESP = 190
+
+// Por debajo de los efectos, para que los disparos y las explosiones sigan
+// abriendose paso por encima del tema.
+const MUSIC_VOL = 110
+
+// Canales y prioridad de sonido
+const SND_PRI = 30
+const CH_HERO = 0
+const CH_FOE = 1
+const CH_EVENT = 2
+
+var soundOk = false
+var musicOk = false
+var musicNow = ""
+
+// ----------------------------------------------------------------
+// Estado global
+// ----------------------------------------------------------------
+var hasInput = true
+var demoMode = START_IN_DEMO
+
+var gameState = GS.TITLE
+var stateTimer = 0
+var phaseNum = PH_BRIDGE
+var score = 0
+var hiScore = 0
+var lives = START_LIVES
+var energy = MAX_ENERGY
+var scrollX = 0.0
+var waveIdx = 0
+var dropIdx = 0
+var shakeTimer = 0
+
+// ---------------- Arte ----------------
+// Los sprites son PLANTILLAS COMPARTIDAS: todos los helicopteros enemigos
+// dibujan el mismo objeto movido de sitio. La animacion no se acelera por
+// ello porque el avance de fotograma va por reloj (_REF_CLOCK contra
+// lastAnimationUpdate en MSprite.cpp), no por llamada a draw.sprite.
+var tileset = nil
+var grid = nil
+var artOk = false
+
+var sprHeroJeep = nil
+var sprHeroHeli = nil
+var sprHeroDiver = nil
+var sprHeroSoldier = nil
+var sprFoeChopper = nil
+var sprFoeJeep = nil
+var sprFoePlane = nil
+var sprFoeAA = nil
+var sprFoeMine = nil
+var sprFoeFish = nil
+var sprFoeSoldier = nil
+var sprFoeMortar = nil
+var sprPickMedal = nil
+var sprPickAmmo = nil
+
+// Vigilante de atasco: la fase a pie la mueve el propio heroe, asi que
+// si el piloto se queda plantado (por ejemplo encima de un tronco,
+// disparando por encima de la cabeza del enemigo) la demo no avanza
+// nunca. Pasado un par de segundos sin progresar, tira hacia adelante.
+var stallX = 0.0
+var stallFrames = 0
+
+// Disciplina de fuego del piloto automatico. Sin esto el gatillo se queda
+// pegado y se nota a la legua que no hay nadie a los mandos: se dispara
+// solo con blanco en la linea de tiro, tras un instante de reaccion, y en
+// rafagas cortas separadas por una pausa.
+var shotCount = 0       // disparos que han salido de verdad (los cuenta HeroFire)
+var aimTimer = 0        // fotogramas seguidos con blanco a tiro
+var burstLen = 0        // disparos de la rafaga en curso, 0 = no hay
+var burstAt = 0         // shotCount cuando arranco la rafaga
+var burstRest = 0       // fotogramas de pausa entre rafagas
+
+
+var hero = nil
+var foes = []
+var pShots = []
+var eShots = []
+var blasts = []
+var picks = []
+
+// Entrada virtual del fotograma: la rellena el jugador o el piloto
+// automatico, y de ahi para abajo el juego no sabe cual de los dos
+// fue. Los flancos se calculan a mano porque Input.justPressed
+// pierde el flanco si se consulta Input mas de una vez por cuadro.
+var inLeft = false
+var inRight = false
+var inUp = false
+var inDown = false
+var inFire = false
+var inJump = false
+var inJumpPrev = false
+var keyDemo = false
+var keyDemoPrev = false
+var keySkip = false
+var keySkipPrev = false
+var keyRestart = false
+
+func Clamp(v, lo, hi)
+    if (v < lo) then return lo end
+    if (v > hi) then return hi end
+    return v
+end
+
+func Sign(v)
+    if (v > 0) then return 1 end
+    if (v < 0) then return -1 end
+    return 0
+end
+
+// ================================================================
+// Arranque del sistema
+// ================================================================
+
+func SetupInput()
+    var pf = platform()
+
+    if (pf == HW_WIN32) then
+        Input.map(ACTION.LEFT, "LEFT")
+        Input.map(ACTION.RIGHT, "RIGHT")
+        Input.map(ACTION.UP, "UP")
+        Input.map(ACTION.DOWN, "DOWN")
+        Input.map(ACTION.FIRE, "Z")
+        Input.map(ACTION.JUMP, "X")
+        Input.map(ACTION.DEMO, "D")
+        Input.map(ACTION.SKIP, "N")
+        Input.map(ACTION.RESTART, "R")
+        return
+    end
+
+    if (pf == HW_ESP32) then
+        Input.map(ACTION.UP, 39)
+        Input.map(ACTION.DOWN, 38)
+        Input.map(ACTION.FIRE, 37)
+        Input.map(ACTION.JUMP, 36)
+        Input.map(ACTION.RIGHT, 35)
+        return
+    end
+
+    // Placas sin botones cableados: demo permanente. Ojo, los GPIO
+    // 34-39 del ESP32 no llevan pull-up interno y sin boton flotan,
+    // asi que aqui ni se mapean.
+    hasInput = false
+    demoMode = true
+end
+
+func SetupSpeed()
+    var pf = platform()
+    if (pf == HW_ESP32 or pf == HW_ESP32S3) then
+        speedScale = 1.9        // ~21 FPS frente a los ~40 de Windows
+    elsif (pf == HW_ESP32P4) then
+        speedScale = 1.35
+    end
+
+    var k = speedScale
+    gravity = GRAVITY * k * k
+    jumpV = JUMP_V * k
+    jeepVx = JEEP_VX * k
+    footVx = FOOT_VX * k
+    heliVx = HELI_VX * k
+    heliVy = HELI_VY * k
+    swimVx = SWIM_VX * k
+    swimVy = SWIM_VY * k
+    pShotV = PSHOT_V * k
+    eShotV = ESHOT_V * k
+    bombV = BOMB_V * k
+    foeSlow = FOE_SLOW * k
+    foeFast = FOE_FAST * k
+
+    fireCool = int(FIRE_COOL / k)
+    invulnFrames = int(INVULN / k)
+    deadFrames = int(DEAD_FRAMES / k)
+    clearFrames = int(CLEAR_FRAMES / k)
+    titleFrames = int(TITLE_FRAMES / k)
+    overFrames = int(OVER_FRAMES / k)
+end
+
+func PhaseScroll(n)
+    switch (n)
+        case PH_BRIDGE :
+            return SCROLL_BRIDGE * speedScale
+        case PH_HELI :
+            return SCROLL_HELI * speedScale
+        case PH_RIVER :
+            return SCROLL_RIVER * speedScale
+        default :
+            return 0.0          // la fase a pie la mueve el heroe
+    end
+end
+
+func InitScreen()
+    Display.viewWidth = SCREEN_W
+    Display.viewHeight = SCREEN_H
+    Display.open(SCREEN_W, SCREEN_H)
+    Display.autoClear = false
+    Display.showBG = false
+    Display.mode(2)
+    draw.colorBG = 0x000000
+    Display.update()
+end
+
+// ----------------------------------------------------------------
+// Carga del arte
+//
+// Sprite.load() NO lee el .spr: le quita la extension y abre el .json
+// del mismo nombre mas un .bmp por fotograma. Los .spr de Sprites/ son
+// para el editor del IDE; lo que consume la VM lo escribe
+// Tools/gen_assets.py directamente en Build/Flash/Sprites.
+// ----------------------------------------------------------------
+func LoadArt()
+    tileset = Bitmap.load("Images/Tiles.bmp")
+
+    sprHeroJeep = Sprite.load("Sprites/HeroJeep.spr")
+    sprHeroHeli = Sprite.load("Sprites/HeroHeli.spr")
+    sprHeroDiver = Sprite.load("Sprites/HeroDiver.spr")
+    sprHeroSoldier = Sprite.load("Sprites/HeroSoldier.spr")
+    sprFoeChopper = Sprite.load("Sprites/FoeChopper.spr")
+    sprFoeJeep = Sprite.load("Sprites/FoeJeep.spr")
+    sprFoePlane = Sprite.load("Sprites/FoePlane.spr")
+    sprFoeAA = Sprite.load("Sprites/FoeAA.spr")
+    sprFoeMine = Sprite.load("Sprites/FoeMine.spr")
+    sprFoeFish = Sprite.load("Sprites/FoeFish.spr")
+    sprFoeSoldier = Sprite.load("Sprites/FoeSoldier.spr")
+    sprFoeMortar = Sprite.load("Sprites/FoeMortar.spr")
+    sprPickMedal = Sprite.load("Sprites/PickMedal.spr")
+    sprPickAmmo = Sprite.load("Sprites/PickAmmo.spr")
+
+    artOk = tileset != nil and sprHeroJeep != nil and sprHeroHeli != nil and
+            sprHeroDiver != nil and sprHeroSoldier != nil and
+            sprFoeChopper != nil and sprFoeJeep != nil and sprFoePlane != nil and
+            sprFoeAA != nil and sprFoeMine != nil and sprFoeFish != nil and
+            sprFoeSoldier != nil and sprFoeMortar != nil and
+            sprPickMedal != nil and sprPickAmmo != nil
+
+    if (not artOk) then
+        println(">>> ERROR: falta arte en Build/Flash. Ejecuta Tools/gen_assets.py")
+        return
+    end
+
+    // El soldado elige postura a mano (andar o saltar), asi que se le
+    // apaga la autoanimacion: si no, draw.sprite adelanta el fotograma
+    // antes de pintar y la pose elegida no es la que sale.
+    sprHeroSoldier.frameRate = 0
+    sprHeroSoldier.loop = true
+
+    println(">>> arte cargado: ", artOk)
+end
+
+func InitSound()
+    soundOk = Sound.init()
+    println(">>> Sound init: ", soundOk)
+    if (not soundOk) then return end
+
+    // Aqui NO se levanta ningun codec. En las placas soportadas el audio lo
+    // configura el firmware desde el perfil del dispositivo (la seccion
+    // "audio" de Config/ESP32/device_profiles.json; en la Waveshare S3 es
+    // I2S directo). Este juego nacio copiando a JaruType, que SI arranca a
+    // mano el ES8311 de la Freenove FNK0104A, y ese arranque en cualquier
+    // otra placa falla y dejaba soundOk a false: ni musica ni efectos, todo
+    // mudo. Los ejemplos que suenan en varias placas --JaruQuest,
+    // JaruBunny-- no tocan el codec.
+    if (platform() == HW_WIN32) then
+        Sound.setMasterVolume(MASTER_VOL_WIN32)
+    else
+        Sound.setMasterVolume(MASTER_VOL_ESP)
+    end
+
+    Sound.stopAll()
+end
+
+// ----------------------------------------------------------------
+// Musica
+// ----------------------------------------------------------------
+func MusicPath(n)
+    switch (n)
+        case PH_BRIDGE :
+            return MUSIC_BRIDGE
+        case PH_HELI :
+            return MUSIC_AIR
+        case PH_RIVER :
+            return MUSIC_RIVER
+        default :
+            return MUSIC_JUNGLE
+    end
+end
+
+// Carga y arranca una pieza. `loop` distingue los temas de fase, que van en
+// bucle, de las fanfarrias, que suenan UNA vez: musicOk se queda a false en
+// esas para que la red de seguridad de UpdatePlaying no las relance al
+// terminar, que es justo lo contrario de lo que se quiere.
+func PlayTrack(path, loop)
+    if (not soundOk) then return end
+
+    Sound.stopMusic()
+    Sound.unloadMusic()
+    musicOk = false
+    musicNow = ""
+
+    if (not Sound.loadMusic(path)) then
+        println(">>> no se pudo cargar la musica: ", path)
+        return
+    end
+    if (not Sound.playMusic(loop)) then
+        println(">>> no se pudo reproducir la musica: ", path)
+        Sound.unloadMusic()
+        return
+    end
+
+    // DESPUES de playMusic, no antes: arrancar una cancion resetea el
+    // volumen de musica al de su cabecera (JaruAudio.cpp), asi que fijarlo
+    // una sola vez al inicio funciona hasta el primer tema y a partir de ahi
+    // cada fase suena al volumen que traiga su .jmu.
+    Sound.setMusicVolume(MUSIC_VOL)
+
+    musicNow = path
+    musicOk = loop
+end
+
+// Cierto mientras suene algo. Sirve para que los carteles de fase superada y
+// de final de juego duren lo que dura su fanfarria, en vez de cuadrar
+// fotogramas a mano: los frames por segundo no son los mismos en Windows que
+// en la placa y el cartel se quedaria corto o largo segun donde corra.
+func MusicBusy()
+    if (not soundOk) then return false end
+    return Sound.isMusicPlaying()
+end
+
+// Se lleva la cuenta de que pieza esta cargada para no descargar y volver a
+// cargar la misma: el titulo y la fase 1 comparten la marcha, y recargarla
+// al empezar la partida cortaria el tema en seco por nada.
+func PlayPhaseMusic(n)
+    if (not soundOk) then return end
+
+    var path = MusicPath(n)
+    if (musicOk and musicNow == path and Sound.isMusicPlaying()) then return end
+
+    PlayTrack(path, true)
+end
+
+func StopMusic()
+    if (not soundOk) then return end
+    Sound.stopMusic()
+    musicOk = false
+    musicNow = ""
+end
+
+// ----------------------------------------------------------------
+// Efectos de sonido
+// ----------------------------------------------------------------
+func Tone(ch, freq, vol, wave, ms)
+    if (not soundOk) then return end
+    Sound.tone(ch, freq, vol, wave, ms, SND_PRI)
+end
+
+func SndShoot()
+    Tone(CH_HERO, 900, 55, Sound.PULSE, 35)
+end
+
+func SndJump()
+    Tone(CH_HERO, 420, 70, Sound.SQUARE, 60)
+end
+
+func SndBlast()
+    if (not soundOk) then return end
+    Sound.noise(95, 14, Sound.NOISE_WHITE, 110, SND_PRI)
+end
+
+func SndBigBlast()
+    if (not soundOk) then return end
+    Sound.noise(130, 26, Sound.NOISE_WHITE, 260, SND_PRI)
+    Tone(CH_EVENT, 130, 110, Sound.TRIANGLE, 300)
+end
+
+func SndFoeHit()
+    Tone(CH_FOE, 240, 70, Sound.SQUARE, 35)
+end
+
+func SndFoeShot()
+    Tone(CH_FOE, 520, 50, Sound.SAW, 40)
+end
+
+func SndPick()
+    Tone(CH_EVENT, 880, 90, Sound.PULSE, 60)
+    Tone(CH_HERO, 1320, 80, Sound.PULSE, 110)
+end
+
+func SndHurt()
+    Tone(CH_EVENT, 180, 110, Sound.SAW, 180)
+end
+
+
+func SndOver()
+    Tone(CH_EVENT, 220, 120, Sound.TRIANGLE, 260)
+    Tone(CH_FOE, 165, 120, Sound.TRIANGLE, 420)
+end
+
+// ================================================================
+// Entidades
+// ================================================================
+
+class Shot
+    def init(wx, y, vx, vy, grav)
+        this.wx = wx
+        this.y = y
+        this.vx = vx
+        this.vy = vy
+        this.grav = grav
+    end
+end
+
+class Blast
+    def init(wx, y, big)
+        this.wx = wx
+        this.y = y
+        this.age = 0
+        this.big = big
+        this.maxAge = big ? int(20 / speedScale) : int(12 / speedScale)
+    end
+end
+
+class Pick
+    def init(wx, y, kind)
+        this.wx = wx
+        this.y = y
+        this.k = kind
+        this.ph = 0.0
+    end
+end
+
+class Foe
+    def init(kind, wx, y)
+        this.k = kind
+        this.wx = wx
+        this.y = y
+        this.base = y
+        this.vx = 0.0
+        this.vy = 0.0
+        this.hp = 1
+        this.t = 0
+        this.ph = 0.0
+    end
+end
+
+// Medias cajas de colision por tipo
+func FoeHW(k)
+    switch (k)
+        case FK_CHOPPER :
+            return 16
+        case FK_JEEP :
+            return 14
+        case FK_PLANE :
+            return 15
+        case FK_AA :
+            return 11
+        case FK_MINE :
+            return 8
+        case FK_FISH :
+            return 11
+        case FK_SOLDIER :
+            return 6
+        default :
+            return 12
+    end
+end
+
+// Medias alturas. Van a un 90% del alto del sprite: algo mas pequenas que
+// el dibujo, que es lo normal para que el jugador no se sienta estafado,
+// pero no la mitad. El helicoptero, el caza y el torpedo se quedaron en el
+// 70%, 62% y 71% al pasar de primitivas a sprites, y con el helicoptero
+// eso se notaba: le pasaban las balas por encima del rotor.
+func FoeHH(k)
+    switch (k)
+        case FK_CHOPPER :
+            return 9
+        case FK_JEEP :
+            return 9
+        case FK_PLANE :
+            return 7
+        case FK_AA :
+            return 10
+        case FK_MINE :
+            return 8
+        case FK_FISH :
+            return 6
+        case FK_SOLDIER :
+            return 11
+        default :
+            return 9
+    end
+end
+
+func SpawnBlast(wx, y, big)
+    if (blasts.size() >= MAX_BLASTS) then return end
+    blasts.append(Blast(wx, y, big))
+end
+
+func SpawnPShot(wx, y, vx, vy)
+    if (pShots.size() >= MAX_PSHOTS) then return end
+    pShots.append(Shot(wx, y, vx, vy, false))
+end
+
+func SpawnEShot(wx, y, vx, vy, grav)
+    if (eShots.size() >= MAX_ESHOTS) then return end
+    eShots.append(Shot(wx, y, vx, vy, grav))
+end
+
+// Disparo dirigido al heroe, normalizado sin raiz cuadrada
+func SpawnAimed(wx, y, speed)
+    var dx = HeroWX() - wx
+    var dy = hero.y - y
+    var mag = abs(dx) + abs(dy)
+    if (mag < 1) then mag = 1 end
+    SpawnEShot(wx, y, speed * dx / mag, speed * dy / mag, false)
+end
+
+func SpawnPick(wx, y, kind)
+    if (picks.size() >= MAX_PICKS) then return end
+    picks.append(Pick(wx, y, kind))
+end
+
+func SpawnFoe(kind, wx, y)
+    if (foes.size() >= MAX_FOES) then return end
+    var f = Foe(kind, wx, y)
+
+    switch (kind)
+        case FK_CHOPPER :
+            f.hp = 2
+            f.vx = -foeSlow * 1.5
+            f.base = y
+            // En el puente la y de la oleada es la ALTURA DE PASADA: entra
+            // por arriba y baja hasta ella. f.vy lleva esa altura mientras
+            // desciende (los helicopteros no usan vy para nada mas).
+            if (phaseNum == PH_BRIDGE) then
+                f.vy = y - 30
+                f.y = f.vy
+            end
+        case FK_JEEP :
+            f.hp = 2
+            f.vx = -foeSlow * 2.2
+            f.y = DECK_LOW - 9
+        case FK_PLANE :
+            f.hp = 1
+            f.vx = -foeFast
+        case FK_AA :
+            f.hp = 3
+            f.vx = 0.0
+            f.y = SurfAtPx(wx) - 10
+        case FK_MINE :
+            f.hp = 1
+            f.vx = 0.0
+            f.base = y
+        case FK_FISH :
+            f.hp = 1
+            f.vx = -foeSlow * 1.4
+        case FK_SOLDIER :
+            f.hp = 2
+            f.vx = -foeSlow * 1.2
+            f.y = SurfAtPx(wx) - 11
+        default :
+            f.hp = 3
+            f.vx = 0.0
+            f.y = SurfAtPx(wx) - 9
+    end
+
+    foes.append(f)
+end
+
+// ================================================================
+// El heroe
+// ================================================================
+class Hero
+    def init()
+        this.md = PH_BRIDGE
+        this.resetFor(PH_BRIDGE)
+    end
+
+    // En los modos de suelo (jeep y soldado) y es la Y de los PIES;
+    // en helicoptero y nadando es el centro del cuerpo.
+    def resetFor(ph)
+        this.md = ph
+        this.x = 74.0
+        this.vx = 0.0
+        this.vy = 0.0
+        this.onGround = false
+        this.standY = NO_GROUND
+        this.cool = 0
+        this.invuln = invulnFrames
+        this.anim = 0.0
+        this.rotor = 0
+
+        switch (ph)
+            case PH_BRIDGE :
+                this.y = DECK_LOW
+                this.onGround = true
+                this.standY = DECK_LOW
+            case PH_HELI :
+                this.y = 90.0
+            case PH_RIVER :
+                this.y = 110.0
+            default :
+                this.y = JUNGLE_GROUND
+                this.onGround = true
+                this.standY = JUNGLE_GROUND
+        end
+    end
+
+    def halfW()
+        switch (this.md)
+            case PH_BRIDGE :
+                return 13
+            case PH_HELI :
+                return 15
+            case PH_RIVER :
+                return 11
+            default :
+                return 6
+        end
+    end
+
+    // Altura del cuerpo por encima de this.y en los modos de suelo,
+    // media altura en los de vuelo/nado.
+    def bodyH()
+        switch (this.md)
+            case PH_BRIDGE :
+                return 16
+            case PH_HELI :
+                return 7
+            case PH_RIVER :
+                return 6
+            default :
+                return 18
+        end
+    end
+end
+
+func HeroWX()
+    return scrollX + hero.x
+end
+
+// Caja del heroe en coordenadas del mundo
+var hbX0 = 0.0
+var hbY0 = 0.0
+var hbX1 = 0.0
+var hbY1 = 0.0
+
+func ComputeHeroBox()
+    var wx = HeroWX()
+    var hw = hero.halfW()
+    hbX0 = wx - hw
+    hbX1 = wx + hw
+    if (hero.md == PH_BRIDGE or hero.md == PH_JUNGLE) then
+        hbY0 = hero.y - hero.bodyH()
+        hbY1 = hero.y
+    else
+        hbY0 = hero.y - hero.bodyH()
+        hbY1 = hero.y + hero.bodyH()
+    end
+end
+
+// ----------------------------------------------------------------
+// Disparo del heroe
+// ----------------------------------------------------------------
+func HeroFire()
+    if (hero.cool > 0) then return end
+    hero.cool = fireCool
+    shotCount++
+    var wx = HeroWX()
+
+    switch (hero.md)
+        case PH_BRIDGE :
+            SpawnPShot(wx + 16, hero.y - 13, pShotV, 0)
+        case PH_HELI :
+            SpawnPShot(wx + 17, hero.y + 1, pShotV, 0)
+        case PH_RIVER :
+            SpawnPShot(wx + 12, hero.y, pShotV * 0.7, 0)
+        default :
+            SpawnPShot(wx + 8, hero.y - 12, pShotV, 0)
+    end
+    SndShoot()
+end
+
+// ----------------------------------------------------------------
+// Fisica de suelo compartida por el jeep y el soldado.
+//
+// Las plataformas altas son atravesables desde abajo: solo se aterriza
+// en ellas cuando se estaba por encima y se cruza el borde cayendo.
+// ----------------------------------------------------------------
+func GroundStep(vxWant)
+    hero.x += vxWant
+
+    if (hero.md == PH_JUNGLE) then
+        // La camara la empuja el propio heroe y nunca retrocede
+        if (hero.x > CAM_PUSH) then
+            scrollX += hero.x - CAM_PUSH
+            hero.x = CAM_PUSH
+        end
+        hero.x = Clamp(hero.x, 10, SCREEN_W - 20)
+    else
+        hero.x = Clamp(hero.x, 22, SCREEN_W - 96)
+    end
+
+    var wx = HeroWX()
+    var surf = SurfAtPx(wx)
+    var over = OverAtPx(wx)
+
+    if (hero.onGround) then
+        // Se sigue de pie mientras la superficie de apoyo exista aqui
+        if (surf == hero.standY) then
+            hero.y = surf
+        elsif (over == hero.standY) then
+            hero.y = over
+        else
+            hero.onGround = false
+            hero.vy = 0.0
+        end
+        if (inJump and not inJumpPrev) then
+            hero.vy = -jumpV
+            hero.onGround = false
+            SndJump()
+        end
+        return
+    end
+
+    var prevFeet = hero.y
+    hero.vy += gravity
+    var newFeet = hero.y + hero.vy
+
+    if (hero.vy >= 0) then
+        // Se prueba primero la plataforma alta: es la de arriba
+        if (over != NO_GROUND and prevFeet <= over and newFeet >= over) then
+            hero.y = over
+            hero.vy = 0.0
+            hero.onGround = true
+            hero.standY = over
+            return
+        end
+        if (surf != NO_GROUND and prevFeet <= surf and newFeet >= surf) then
+            hero.y = surf
+            hero.vy = 0.0
+            hero.onGround = true
+            hero.standY = surf
+            return
+        end
+    end
+
+    hero.y = newFeet
+end
+
+// ----------------------------------------------------------------
+// Actualizacion del heroe segun la fase
+// ----------------------------------------------------------------
+func UpdateHero()
+    if (hero.cool > 0) then hero.cool-- end
+    if (hero.invuln > 0) then hero.invuln-- end
+    hero.rotor++
+
+    switch (hero.md)
+        case PH_BRIDGE :
+            var vx = 0.0
+            if (inRight) then vx += jeepVx end
+            if (inLeft) then vx -= jeepVx end
+            GroundStep(vx)
+            hero.anim += 0.5
+            if (hero.y > PLAY_BOT + 12) then
+                KillHero("al agua")
+                return
+            end
+
+        case PH_HELI :
+            if (inRight) then hero.x += heliVx end
+            if (inLeft) then hero.x -= heliVx end
+            if (inUp) then hero.y -= heliVy end
+            if (inDown) then hero.y += heliVy end
+            hero.x = Clamp(hero.x, 26, SCREEN_W - 70)
+            hero.y = Clamp(hero.y, PLAY_TOP + 12, PLAY_BOT - 8)
+            // Rozar la copa de los arboles es mortal
+            var g = SurfAtPx(HeroWX())
+            if (hero.y + 7 >= g) then
+                KillHero("contra el arbolado")
+                return
+            end
+
+        case PH_RIVER :
+            if (inRight) then hero.x += swimVx end
+            if (inLeft) then hero.x -= swimVx end
+            if (inUp) then hero.y -= swimVy end
+            if (inDown) then hero.y += swimVy end
+            hero.x = Clamp(hero.x, 26, SCREEN_W - 80)
+            var bed = SurfAtPx(HeroWX())
+            hero.y = Clamp(hero.y, RIVER_TOP + 9, bed - 8)
+
+        default :
+            var vx2 = 0.0
+            if (inRight) then vx2 += footVx end
+            if (inLeft) then vx2 -= footVx end
+            GroundStep(vx2)
+            if (vx2 != 0 and hero.onGround) then hero.anim += 0.28 end
+            if (hero.y > PLAY_BOT + 12) then
+                KillHero("al foso")
+                return
+            end
+    end
+
+    if (inFire) then HeroFire() end
+end
+
+// ================================================================
+// Enemigos
+// ================================================================
+func UpdateFoes()
+    var heroWX = HeroWX()
+
+    for (var i = foes.size() - 1;i >= 0;i--)
+        var f = foes[i]
+        f.t++
+        f.wx += f.vx
+
+        switch (f.k)
+            case FK_CHOPPER :
+                f.ph += 0.07 * speedScale
+                if (phaseNum == PH_BRIDGE) then
+                    // Pasada en picado hasta la altura que traiga la oleada:
+                    // CHOP_LOW se barre desde la cubierta y CHOP_HIGH obliga
+                    // a saltar.
+                    //
+                    // El cabeceo se SUMA a la altura de pasada (f.vy) en vez
+                    // de acumularse sobre f.y. Sumarlo a f.y integra el seno,
+                    // y con paso 0,07 eso no es el vaiven de +-1,4 que
+                    // parece sino uno de +-20, que se comia la diferencia
+                    // entre volar alto y volar bajo.
+                    // Baja deprisa (~30 fotogramas): con el descenso lento
+                    // de antes ninguno llegaba a su altura antes de cruzarse
+                    // con el jeep, y los dos tipos acababan volando igual de
+                    // altos. Las alturas de pasada solo significan algo si
+                    // se alcanzan a tiempo.
+                    if (f.vy < f.base) then f.vy += foeSlow * 1.8 end
+                    if (f.vy > f.base) then f.vy = f.base end
+                    f.y = f.vy + Math.sin(f.ph) * 5
+                else
+                    f.y = f.base + Math.sin(f.ph) * 14
+                end
+                if (f.t mod int(64 / speedScale) == 0 and f.wx < heroWX + 190) then
+                    SpawnEShot(f.wx, f.y + 6, -foeSlow * 0.6, bombV, true)
+                    SndFoeShot()
+                end
+
+            case FK_JEEP :
+                // Cae al agua si se le acaba la cubierta
+                var s = SurfAtPx(f.wx)
+                if (s == NO_GROUND) then
+                    f.y += 2.2 * speedScale
+                    if (f.y > PLAY_BOT + 20) then f.hp = 0 end
+                else
+                    f.y = s - 9
+                    if (f.t mod int(78 / speedScale) == 0 and f.wx > heroWX + 30) then
+                        SpawnEShot(f.wx - 14, f.y - 5, -eShotV, 0, false)
+                        SndFoeShot()
+                    end
+                end
+
+            case FK_PLANE :
+                if (f.t mod int(52 / speedScale) == 0 and f.wx > heroWX) then
+                    SpawnAimed(f.wx - 14, f.y, eShotV)
+                    SndFoeShot()
+                end
+
+            case FK_AA :
+                if (f.t mod int(70 / speedScale) == 0 and
+                    f.wx > scrollX + 30 and f.wx < scrollX + SCREEN_W - 10) then
+                    SpawnAimed(f.wx, f.y - 8, eShotV)
+                    SndFoeShot()
+                end
+
+            case FK_MINE :
+                f.ph += 0.05 * speedScale
+                f.y = f.base + Math.sin(f.ph) * 5
+
+            case FK_FISH :
+                // Persigue en vertical con paso corto
+                if (hero.y > f.y + 2) then
+                    f.y += foeSlow * 0.8
+                elsif (hero.y < f.y - 2) then
+                    f.y -= foeSlow * 0.8
+                end
+
+            case FK_SOLDIER :
+                var s2 = SurfAtPx(f.wx)
+                if (s2 == NO_GROUND) then
+                    f.y += 2.2 * speedScale
+                    if (f.y > PLAY_BOT + 20) then f.hp = 0 end
+                else
+                    f.y = s2 - 11
+                    // Se planta a media distancia y dispara
+                    if (f.wx - heroWX < 120) then f.vx = 0.0 end
+                    if (f.t mod int(64 / speedScale) == 0 and f.wx > heroWX + 20) then
+                        SpawnEShot(f.wx - 8, f.y - 3, -eShotV, 0, false)
+                        SndFoeShot()
+                    end
+                end
+
+            default :
+                // Mortero: granada en parabola
+                if (f.t mod int(96 / speedScale) == 0 and
+                    f.wx > heroWX + 40 and f.wx < heroWX + 250) then
+                    SpawnEShot(f.wx - 8, f.y - 10, -eShotV * 0.85, -3.2 * speedScale, true)
+                    SndFoeShot()
+                end
+        end
+
+        if (f.hp <= 0 or f.wx < scrollX - 60 or f.wx > scrollX + SCREEN_W + 200) then
+            foes.remove(f)
+        end
+    end
+end
+
+func KillFoe(f)
+    var big = f.k == FK_AA or f.k == FK_MORTAR or f.k == FK_MINE
+    SpawnBlast(f.wx, f.y, big)
+    SndBlast()
+    switch (f.k)
+        case FK_CHOPPER :
+            score += 150
+        case FK_JEEP :
+            score += 120
+        case FK_PLANE :
+            score += 100
+        case FK_AA :
+            score += 250
+        case FK_MINE :
+            score += 80
+        case FK_FISH :
+            score += 90
+        case FK_SOLDIER :
+            score += 110
+        default :
+            score += 300
+    end
+    f.hp = 0
+end
+
+// ================================================================
+// Proyectiles, explosiones y recogibles
+// ================================================================
+func UpdateShots()
+    for (var i = pShots.size() - 1;i >= 0;i--)
+        var b = pShots[i]
+        b.wx += b.vx
+        b.y += b.vy
+        var dead = b.wx > scrollX + SCREEN_W + 8 or b.wx < scrollX - 20
+        if (not dead and b.y < PLAY_TOP or b.y > PLAY_BOT) then dead = true end
+        // En tierra y en el puente la bala choca contra el escenario
+        if (not dead and (hero.md == PH_BRIDGE or hero.md == PH_JUNGLE)) then
+            var s = SurfAtPx(b.wx)
+            if (s != NO_GROUND and b.y > s) then dead = true end
+        end
+        if (dead) then pShots.remove(b) end
+    end
+
+    for (var j = eShots.size() - 1;j >= 0;j--)
+        var e = eShots[j]
+        if (e.grav) then e.vy += gravity * 0.5 end
+        e.wx += e.vx
+        e.y += e.vy
+        var gone = e.wx < scrollX - 20 or e.wx > scrollX + SCREEN_W + 40
+        if (not gone and (e.y < PLAY_TOP - 20 or e.y > PLAY_BOT)) then gone = true end
+        if (not gone and (hero.md == PH_BRIDGE or hero.md == PH_JUNGLE)) then
+            var s2 = SurfAtPx(e.wx)
+            if (s2 != NO_GROUND and e.y > s2) then
+                SpawnBlast(e.wx, s2 - 3, false)
+                gone = true
+            end
+        end
+        if (gone) then eShots.remove(e) end
+    end
+end
+
+func UpdateBlasts()
+    for (var i = blasts.size() - 1;i >= 0;i--)
+        var b = blasts[i]
+        b.age++
+        if (b.age > b.maxAge) then blasts.remove(b) end
+    end
+end
+
+func UpdatePicks()
+    for (var i = picks.size() - 1;i >= 0;i--)
+        var p = picks[i]
+        p.ph += 0.12 * speedScale
+        if (p.wx < scrollX - 40) then picks.remove(p) end
+    end
+end
+
+// ================================================================
+// Colisiones
+// ================================================================
+func Overlap(ax0, ay0, ax1, ay1, bx0, by0, bx1, by1)
+    if (ax1 < bx0 or ax0 > bx1) then return false end
+    if (ay1 < by0 or ay0 > by1) then return false end
+    return true
+end
+
+func HurtHero(deadly)
+    if (hero.invuln > 0) then return end
+    if (deadly) then
+        KillHero("mina")
+        return
+    end
+    energy--
+    hero.invuln = invulnFrames
+    shakeTimer = int(10 / speedScale)
+    if (energy <= 0) then
+        KillHero("energia")
+    else
+        SndHurt()
+    end
+end
+
+func KillHero(cause)
+    if (gameState != GS.PLAY) then return end
+    println(">>> baja: fase ", phaseNum, " x ", int(scrollX), " causa ", cause)
+    SpawnBlast(HeroWX(), hero.y - 6, true)
+    SndBigBlast()
+    lives--
+    energy = 0
+    gameState = GS.DEAD
+    stateTimer = deadFrames
+end
+
+func CheckCollisions()
+    ComputeHeroBox()
+
+    // Balas del heroe contra enemigos
+    for (var i = pShots.size() - 1;i >= 0;i--)
+        var b = pShots[i]
+        var used = false
+        for (var j = foes.size() - 1;j >= 0;j--)
+            var f = foes[j]
+            if (f.hp <= 0) then continue end
+            var hw = FoeHW(f.k)
+            var hh = FoeHH(f.k)
+            if (Overlap(b.wx - 3, b.y - 2, b.wx + 3, b.y + 2,
+                        f.wx - hw, f.y - hh, f.wx + hw, f.y + hh)) then
+                f.hp--
+                used = true
+                if (f.hp <= 0) then
+                    KillFoe(f)
+                else
+                    SndFoeHit()
+                end
+                break
+            end
+        end
+        if (used) then pShots.remove(b) end
+    end
+
+    if (hero.invuln <= 0) then
+        // Balas enemigas contra el heroe
+        for (var m = eShots.size() - 1;m >= 0;m--)
+            var e = eShots[m]
+            if (Overlap(e.wx - 3, e.y - 3, e.wx + 3, e.y + 3,
+                        hbX0, hbY0, hbX1, hbY1)) then
+                SpawnBlast(e.wx, e.y, false)
+                eShots.remove(e)
+                HurtHero(false)
+                return
+            end
+        end
+
+        // Choque contra un enemigo
+        foreach (var f2 in foes)
+            if (f2.hp <= 0) then continue end
+            var hw2 = FoeHW(f2.k)
+            var hh2 = FoeHH(f2.k)
+            if (Overlap(f2.wx - hw2, f2.y - hh2, f2.wx + hw2, f2.y + hh2,
+                        hbX0, hbY0, hbX1, hbY1)) then
+                // Una mina revienta al contacto: eso no lo aguanta nadie
+                if (f2.k == FK_MINE) then
+                    KillFoe(f2)
+                    HurtHero(true)
+                else
+                    HurtHero(false)
+                end
+                return
+            end
+        end
+    end
+
+    // Recogidas
+    for (var p = picks.size() - 1;p >= 0;p--)
+        var pk = picks[p]
+        if (Overlap(pk.wx - 8, pk.y - 8, pk.wx + 8, pk.y + 8,
+                    hbX0, hbY0, hbX1, hbY1)) then
+            if (pk.k == PK_MEDAL) then
+                if (energy < MAX_ENERGY) then energy++ end
+                score += 200
+            else
+                score += 500
+            end
+            SndPick()
+            picks.remove(pk)
+        end
+    end
+end
+
+// ================================================================
+// Piloto automatico
+//
+// No es un jugador aparte: escribe las mismas variables inLeft,
+// inRight, ... que leeria el teclado, asi que a partir de ahi corre
+// exactamente el mismo codigo que en una partida humana.
+// ================================================================
+
+// Y por la que sale el disparo en cada modo. Es la que decide si un blanco
+// esta a tiro: ni el canon del jeep ni el fusil del soldado apuntan, tiran
+// en horizontal, asi que lo que no este a esa altura no se puede tocar.
+func AimY()
+    switch (hero.md)
+        case PH_BRIDGE :
+            return hero.y - 13
+        case PH_HELI :
+            return hero.y + 1
+        case PH_RIVER :
+            return hero.y
+        default :
+            return hero.y - 12
+    end
+end
+
+// Cierto si hay un enemigo por delante, dentro de alcance y cerca de la
+// altura de la linea de tiro.
+//
+// La holgura (media altura del enemigo mas 10 px) no es vaguedad: los
+// helicopteros cabecean y los aviones suben y bajan, y exigir alineacion
+// exacta deja al piloto esperando el instante justo. Pero tampoco conviene
+// pasarse: con 16 px casi siempre habia algo "en linea" y el gatillo volvia
+// a sonar a automatico. Un jugador tira cuando lo ve venir, no cuando lo
+// tiene clavado ni cuando le pasa a media pantalla.
+func FoeInLine(rangePx)
+    var wx = HeroWX()
+    var ay = AimY()
+    foreach (var f in foes)
+        var dx = f.wx - wx
+        if (dx > 4 and dx < rangePx and abs(f.y - ay) < FoeHH(f.k) + 10) then
+            return true
+        end
+    end
+    return false
+end
+
+// Traduce "hay blanco" en un gatillo con maneras humanas: un instante de
+// reaccion antes de abrir fuego, rafagas de dos a cuatro disparos y una
+// pausa entre ellas. Se suelta el gatillo en cuanto el blanco se va.
+func WantFire(hayBlanco)
+    if (burstRest > 0) then
+        burstRest--
+        aimTimer = 0
+        return false
+    end
+
+    if (not hayBlanco) then
+        aimTimer = 0
+        if (burstLen > 0) then
+            burstLen = 0
+            burstRest = int(16 / speedScale)
+        end
+        return false
+    end
+
+    // Retardo de reaccion corto. Tres fotogramas bastan para que no se
+    // dispare en el mismo instante en que algo cruza la linea; con siete la
+    // ocasion de un salto del jeep --unos diez fotogramas de tiro claro
+    // mientras esta arriba-- se consumia casi entera esperando, y de 106
+    // fotogramas aprovechables solo salian 8 disparos.
+    aimTimer++
+    if (aimTimer < int(2 / speedScale) + 1) then return false end
+
+    if (burstLen == 0) then
+        burstLen = random(2, 4)
+        burstAt = shotCount
+    end
+    if (shotCount - burstAt >= burstLen) then
+        burstLen = 0
+        burstRest = int(random(26, 46) / speedScale) + 1
+        return false
+    end
+
+    return true
+end
+
+func ResetFireDiscipline()
+    aimTimer = 0
+    burstLen = 0
+    burstRest = 0
+    burstAt = shotCount
+end
+
+// Primera columna sin suelo por delante, en px del mundo, o -1
+func GapAhead(fromWX, rangePx)
+    var c0 = int(fromWX) div TCOL
+    var c1 = int(fromWX + rangePx) div TCOL
+    for (var c = c0;c <= c1;c++)
+        if (SurfAt(c) == NO_GROUND) then return c * TCOL end
+    end
+    return -1
+end
+
+// Rehace la caida del heroe fotograma a fotograma con una velocidad de
+// avance dada y devuelve la X del mundo donde aterrizaria, o -1 si se
+// va al vacio. Es la misma cuenta que GroundStep, sin tocar el estado.
+func PredictLanding(vxWorld)
+    var y = hero.y
+    var vy = hero.vy
+    var wx = HeroWX()
+
+    for (var i = 0;i < 70;i++)
+        vy += gravity
+        var ny = y + vy
+        wx += vxWorld
+        if (vy >= 0) then
+            var over = OverAtPx(wx)
+            if (over != NO_GROUND and y <= over and ny >= over) then return wx end
+            var surf = SurfAtPx(wx)
+            if (surf != NO_GROUND and y <= surf and ny >= surf) then return wx end
+        end
+        y = ny
+        if (y > PLAY_BOT + 12) then return -1 end
+    end
+    return -1
+end
+
+func AutoJeep()
+    var wx = HeroWX()
+
+    inRight = false
+    inLeft = false
+    inFire = WantFire(FoeInLine(210))
+    inJump = false
+
+    // 0. En el aire no se decide por instinto sino simulando la caida
+    //    con cada marcha. Acelerar a ciegas parece lo prudente y no lo
+    //    es: al bajar de la pasarela el jeep gana 26 px de alcance y se
+    //    planta justo dentro del hueco que venia despues.
+    if (not hero.onGround) then
+        if (PredictLanding(scrollSpeed + jeepVx) >= 0) then
+            inRight = true
+        elsif (PredictLanding(scrollSpeed) >= 0) then
+            inRight = false
+        elsif (PredictLanding(scrollSpeed - jeepVx) >= 0) then
+            inLeft = true
+        else
+            inRight = true      // no hay aterrizaje bueno: al menos llegar lejos
+        end
+        return
+    end
+
+    // 1. Los huecos mandan. La distancia se mide al centro, no al morro:
+    //    el jeep empieza a caer cuando su centro pasa el borde.
+    if (hero.onGround and hero.standY == DECK_LOW) then
+        var gap = GapAhead(wx, 70)
+        if (gap >= 0) then
+            var dc = gap - wx
+            if (dc > 0 and dc <= 20) then inJump = true end
+        end
+    end
+
+    // 1.5 Saltar PARA DISPARAR a los helicopteros que van ALTOS. A los de
+    //     pasada baja se les llega desde la cubierta y saltar no aporta
+    //     nada; el corte esta por encima de su cabeceo, asi que solo se
+    //     salta por los que de verdad no se alcanzan de otro modo. Se salta
+    //     con el helicoptero todavia por delante, porque el jeep tarda en
+    //     subir y la bala en llegar.
+    if (not inJump and hero.onGround and hero.standY == DECK_LOW) then
+        if (GapAhead(wx, 90) < 0) then
+            foreach (var f in foes)
+                if (f.k == FK_CHOPPER) then
+                    var dxc = f.wx - wx
+                    if (dxc > 30 and dxc < 140 and f.y < hero.y - 34) then
+                        inJump = true
+                        break
+                    end
+                end
+            end
+        end
+    end
+
+    // 2. Subir a la pasarela si hay botiquin arriba y no hay hueco cerca
+    if (not inJump and hero.onGround and hero.standY == DECK_LOW) then
+        if (GapAhead(wx, 100) < 0) then
+            foreach (var p in picks)
+                if (p.y < DECK_LOW - 24 and p.wx > wx + 6 and p.wx < wx + 54) then
+                    if (OverAtPx(wx + 30) != NO_GROUND) then inJump = true end
+                    break
+                end
+            end
+        end
+    end
+
+    // 3. Colocacion horizontal. Le caen bombas desde arriba y le vienen
+    //    jeeps de frente; en los dos casos lo que salva es abrir hueco
+    //    longitudinal. Aguantar atras casi clava al jeep en el sitio
+    //    (scroll 1,7 menos su marcha 2,0), asi que la bomba cae delante.
+    var hold = false
+    var push = false
+
+    foreach (var e in eShots)
+        var dx = e.wx - wx
+        if (e.y < hero.y - 18 and dx > -34 and dx < 72) then
+            if (dx > 0) then
+                hold = true
+            else
+                push = true
+            end
+            break
+        end
+    end
+
+    if (not hold and not push) then
+        // Cualquier enemigo que venga de frente a la altura del jeep, no
+        // solo los jeeps enemigos: desde que los helicopteros bajan en
+        // picado, ellos tambien embisten.
+        foreach (var f in foes)
+            var dxf = f.wx - wx
+            if (dxf > 0 and dxf < 96 and f.y + FoeHH(f.k) > hero.y - 18) then
+                hold = true
+                break
+            end
+        end
+    end
+
+    var backSafe = SurfAtPx(wx - 26) != NO_GROUND and GapAhead(wx, 70) < 0
+    if (hold and backSafe) then
+        inLeft = true
+    elsif (push) then
+        inRight = true
+    elsif (hero.x < 78) then
+        inRight = true
+    elsif (hero.x > 104) then
+        inLeft = true
+    end
+end
+
+// Elige la altura mas despejada de una banda en vez de reaccionar a
+// una sola amenaza: recorre carriles cada 8 px y puntua cada uno por
+// lo que se le viene encima, pesando mas lo que esta cerca. Esquivar
+// "la bala mas proxima" funciona con una, pero con cuatro minas o dos
+// baterias disparando a la vez te mete en la siguiente.
+func BestLane(loY, hiY, aheadPx)
+    var wx = HeroWX()
+    var bestY = hero.y
+    var bestCost = 9999999.0
+    var y = loY
+
+    while (y <= hiY)
+        var cost = 0.0
+
+        foreach (var e in eShots)
+            var dx = e.wx - wx
+            if (dx > -16 and dx < aheadPx) then
+                var dy = abs(e.y - y)
+                if (dy < 28) then
+                    cost += (28 - dy) * (aheadPx - dx) * 3 / aheadPx
+                end
+            end
+        end
+
+        foreach (var f in foes)
+            var dxf = f.wx - wx
+            if (dxf > -16 and dxf < aheadPx) then
+                var margin = FoeHH(f.k) + 20
+                // A una mina no se la roza: reventar al contacto
+                if (f.k == FK_MINE) then margin = 40 end
+                var dyf = abs(f.y - y)
+                if (dyf < margin) then
+                    cost += (margin - dyf) * (aheadPx - dxf) * 4 / aheadPx
+                end
+            end
+        end
+
+        // A igualdad de peligro, quedarse cerca de donde ya se esta
+        cost += abs(y - hero.y) * 0.06
+
+        if (cost < bestCost) then
+            bestCost = cost
+            bestY = y
+        end
+        y += 8
+    end
+
+    return bestY
+end
+
+// Cierto si hay algo que esquivar lo bastante cerca como para dejar de
+// buscar blanco y dedicarse a sobrevivir.
+func ThreatClose(rangeShot, rangeFoe)
+    var wx = HeroWX()
+    foreach (var e in eShots)
+        var dx = e.wx - wx
+        if (dx > -16 and dx < rangeShot and abs(e.y - hero.y) < 46) then return true end
+    end
+    foreach (var f in foes)
+        var dxf = f.wx - wx
+        if (dxf > -16 and dxf < rangeFoe and abs(f.y - hero.y) < 46) then return true end
+    end
+    return false
+end
+
+func AutoHeli()
+    var wx = HeroWX()
+
+    inLeft = false
+    inRight = false
+    inUp = false
+    inDown = false
+    inFire = WantFire(FoeInLine(220))
+    inJump = false
+
+    // Nunca apuntar contra el arbolado que viene
+    var gAhead = SurfAtPx(wx + 70)
+    var gHere = SurfAtPx(wx + 16)
+    var lowLimit = gAhead < gHere ? gAhead : gHere
+    var loY = PLAY_TOP + 22
+    var hiY = lowLimit - 26
+    if (hiY < loY + 8) then hiY = loY + 8 end
+
+    var targetY = BestLane(loY, hiY, 130)
+
+    // Con el carril limpio, alinearse con el blanco mas proximo
+    if (not ThreatClose(96, 76)) then
+        var best = 9999
+        foreach (var f in foes)
+            var dx = f.wx - wx
+            if (dx > 24 and dx < best) then
+                best = dx
+                targetY = f.y
+            end
+        end
+        if (best == 9999) then
+            foreach (var p in picks)
+                var dxp = p.wx - wx
+                if (dxp > 10 and dxp < 200) then targetY = p.y end
+            end
+        end
+        targetY = Clamp(targetY, loY, hiY)
+    end
+
+    if (hero.y > targetY + 3) then inUp = true end
+    if (hero.y < targetY - 3) then inDown = true end
+    if (hero.x < 84) then inRight = true end
+    if (hero.x > 112) then inLeft = true end
+end
+
+func AutoSwim()
+    var wx = HeroWX()
+    var bed = SurfAtPx(wx + 40)
+    var bedFar = SurfAtPx(wx + 120)
+    if (bedFar < bed) then bed = bedFar end
+
+    inLeft = false
+    inRight = false
+    inUp = false
+    inDown = false
+    // El arpon sale a la altura del buzo, o sea que lo que entra en la
+    // linea de tiro es justo lo que le cierra el paso. Alcance corto: bajo
+    // el agua se dispara a lo que se tiene encima, no a media pantalla.
+    inFire = WantFire(FoeInLine(150))
+    inJump = false
+
+    var loY = RIVER_TOP + 14
+    var hiY = bed - 14
+    if (hiY < loY + 8) then hiY = loY + 8 end
+
+    var targetY = BestLane(loY, hiY, 160)
+
+    if (not ThreatClose(120, 130)) then
+        foreach (var p in picks)
+            var dxp = p.wx - wx
+            if (dxp > 4 and dxp < 150) then
+                targetY = Clamp(p.y, loY, hiY)
+                break
+            end
+        end
+    end
+
+    if (hero.y > targetY + 2) then inUp = true end
+    if (hero.y < targetY - 2) then inDown = true end
+    if (hero.x < 82) then inRight = true end
+    if (hero.x > 106) then inLeft = true end
+end
+
+func AutoFoot()
+    var wx = HeroWX()
+
+    inRight = true
+    inLeft = false
+    inFire = WantFire(FoeInLine(180))
+    inJump = false
+    inUp = false
+    inDown = false
+
+    // 0. En el aire sobre un foso se sigue corriendo pase lo que pase
+    if (not hero.onGround and GapAhead(wx - 8, 90) >= 0) then
+        return
+    end
+
+    // 1. Fosos: el salto del soldado cubre ~64 px y el foso mas ancho
+    //    mide 40. La distancia va al centro del cuerpo, que es lo que
+    //    decide si hay suelo debajo.
+    if (hero.onGround) then
+        var gap = GapAhead(wx, 80)
+        if (gap >= 0) then
+            var dc = gap - wx
+            if (dc > 0 and dc <= 18) then inJump = true end
+        end
+    end
+
+    // 2. Granadas: si viene una cayendo cerca, saltar
+    if (not inJump and hero.onGround) then
+        foreach (var e in eShots)
+            if (e.grav and e.wx > wx and e.wx < wx + 34 and e.y > hero.y - 40) then
+                inJump = true
+                break
+            end
+        end
+    end
+
+    // 3. No echarse encima del enemigo: a bocajarro se frena y se
+    //    dispara hasta tumbarlo. Solo desde el suelo firme -- subido a
+    //    un tronco el fusil pasa por encima del casco enemigo y la
+    //    escena se eterniza -- y solo mientras se este progresando.
+    if (not hero.onGround) then return end
+    if (hero.standY != JUNGLE_GROUND) then return end
+    if (stallFrames > int(80 / speedScale)) then return end
+
+    var near = 9999
+    foreach (var f in foes)
+        var dx = f.wx - wx
+        if (dx > 0 and dx < near) then near = dx end
+    end
+    if (near < 52 and not inJump) then inRight = false end
+end
+
+func AutoPilot()
+    switch (hero.md)
+        case PH_BRIDGE :
+            AutoJeep()
+        case PH_HELI :
+            AutoHeli()
+        case PH_RIVER :
+            AutoSwim()
+        default :
+            AutoFoot()
+    end
+end
+
+func ClearVirtualInput()
+    inLeft = false
+    inRight = false
+    inUp = false
+    inDown = false
+    inFire = false
+    inJump = false
+end
+
+func ReadInput()
+    inJumpPrev = inJump
+    keyDemoPrev = keyDemo
+    keySkipPrev = keySkip
+
+    if (hasInput) then
+        Input.update()
+        keyDemo = Input.pressed(ACTION.DEMO)
+        keySkip = Input.pressed(ACTION.SKIP)
+        keyRestart = Input.pressed(ACTION.RESTART)
+        if (keyDemo and not keyDemoPrev) then
+            demoMode = not demoMode
+            println(">>> demo mode: ", demoMode)
+        end
+    end
+
+    if (hasInput and not demoMode) then
+        inLeft = Input.pressed(ACTION.LEFT)
+        inRight = Input.pressed(ACTION.RIGHT)
+        inUp = Input.pressed(ACTION.UP)
+        inDown = Input.pressed(ACTION.DOWN)
+        inFire = Input.pressed(ACTION.FIRE)
+        inJump = Input.pressed(ACTION.JUMP)
+    elsif (gameState == GS.PLAY) then
+        AutoPilot()
+    else
+        ClearVirtualInput()
+    end
+end
+
+// ================================================================
+// Flujo de fases
+// ================================================================
+func ClearEntities()
+    foes = []
+    pShots = []
+    eShots = []
+    blasts = []
+    picks = []
+end
+
+func StartPhase(n)
+    phaseNum = n
+    BuildPhase(n)
+    BuildGrid()
+    scrollSpeed = PhaseScroll(n)
+    scrollX = 0.0
+    waveIdx = 0
+    dropIdx = 0
+    shakeTimer = 0
+    stallX = 0.0
+    stallFrames = 0
+    ClearEntities()
+    energy = MAX_ENERGY
+    hero.resetFor(n)
+    ResetFireDiscipline()
+    PlayPhaseMusic(n)
+    gameState = GS.PLAY
+    stateTimer = 0
+    println(">>> Phase ", n, " cols=", phaseCols, " end=", phaseEndPx,
+            " waves=", waves.size(), " drops=", drops.size())
+end
+
+func NewGame()
+    score = 0
+    lives = START_LIVES
+    StartPhase(PH_BRIDGE)
+end
+
+func StartTitle()
+    if (score > hiScore) then hiScore = score end
+    gameState = GS.TITLE
+    stateTimer = titleFrames
+    phaseNum = PH_BRIDGE
+    BuildPhase(PH_BRIDGE)
+    BuildGrid()
+    scrollSpeed = PhaseScroll(PH_BRIDGE)
+    scrollX = 0.0
+    waveIdx = 0
+    dropIdx = 0
+    ClearEntities()
+    hero.resetFor(PH_BRIDGE)
+    // El titulo suena con la marcha de la fase 1, y al empezar partida
+    // PlayPhaseMusic la deja seguir en vez de recargarla
+    PlayPhaseMusic(PH_BRIDGE)
+end
+
+// Vuelve a poner al heroe en pie donde se quedo, en vez de mandarlo al
+// principio de la fase: la demo tiene que seguir avanzando sola aunque
+// se coma un mal salto.
+func Respawn()
+    if (lives <= 0) then
+        gameState = GS.OVER
+        stateTimer = overFrames
+        StopMusic()
+        SndOver()
+        return
+    end
+
+    if (phaseNum == PH_BRIDGE or phaseNum == PH_JUNGLE) then
+        var c = int(scrollX + 74) div TCOL
+        var guard = 0
+        while (SurfAt(c) == NO_GROUND and guard < 60)
+            c++
+            guard++
+        end
+        scrollX = c * TCOL - 74
+        if (scrollX < 0) then scrollX = 0.0 end
+    end
+
+    ClearEntities()
+    energy = MAX_ENERGY
+    stallX = scrollX
+    stallFrames = 0
+    hero.resetFor(phaseNum)
+    ResetFireDiscipline()
+    hero.invuln = invulnFrames * 2
+    gameState = GS.PLAY
+end
+
+func NextPhase()
+    if (phaseNum >= TOTAL_PHASES) then
+        gameState = GS.WIN
+        stateTimer = overFrames
+        score += 5000
+        PlayTrack(MUSIC_WIN, false)
+        ClearEntities()
+        return
+    end
+    StartPhase(phaseNum + 1)
+end
+
+func PhaseDone()
+    if (phaseNum == PH_JUNGLE) then return HeroWX() >= phaseEndPx end
+    return scrollX >= phaseEndPx
+end
+
+func SpawnPending()
+    var edge = scrollX + SCREEN_W + 24
+    while (waveIdx < waves.size() and waves[waveIdx][0] <= edge)
+        var w = waves[waveIdx]
+        waveIdx++
+        SpawnFoe(w[1], w[0], w[2])
+    end
+    while (dropIdx < drops.size() and drops[dropIdx][0] <= edge)
+        var d = drops[dropIdx]
+        dropIdx++
+        SpawnPick(d[0], d[2], d[1])
+    end
+end
+
+func UpdatePlaying()
+    if (hasInput and keySkip and not keySkipPrev) then
+        NextPhase()
+        return
+    end
+
+    // Red de seguridad: si el bucle de la musica se cae, se relanza
+    if (musicOk and not Sound.isMusicPlaying()) then
+        Sound.playMusic(true)
+        Sound.setMusicVolume(MUSIC_VOL)
+    end
+
+    if (phaseNum != PH_JUNGLE) then scrollX += scrollSpeed end
+
+    SpawnPending()
+    UpdateHero()
+    if (gameState != GS.PLAY) then return end
+
+    UpdateFoes()
+    UpdateShots()
+    UpdateBlasts()
+    UpdatePicks()
+    CheckCollisions()
+    if (gameState != GS.PLAY) then return end
+
+    if (shakeTimer > 0) then shakeTimer-- end
+
+    if (scrollX > stallX + 4) then
+        stallX = scrollX
+        stallFrames = 0
+    else
+        stallFrames++
+    end
+
+    if (PhaseDone()) then
+        score += 1000 * phaseNum
+        gameState = GS.CLEAR
+        stateTimer = clearFrames
+        // La fanfarria sustituye al acorde de tres notas que habia antes:
+        // los dos a la vez se pisan, y el tema de la fase tiene que
+        // callarse de todos modos.
+        PlayTrack(MUSIC_CLEAR, false)
+    end
+end
+
+// ================================================================
+// Dibujado
+// ================================================================
+
+// Digitos de siete segmentos: en el bucle de juego no se usa draw.text
+// porque rasteriza la TTF en cada llamada y se come el cuadro.
+var SEG = [[1,1,1,1,1,1,0],
+           [0,1,1,0,0,0,0],
+           [1,1,0,1,1,0,1],
+           [1,1,1,1,0,0,1],
+           [0,1,1,0,0,1,1],
+           [1,0,1,1,0,1,1],
+           [1,0,1,1,1,1,1],
+           [1,1,1,0,0,0,0],
+           [1,1,1,1,1,1,1],
+           [1,1,1,1,0,1,1]]
+var SEGX = [1,4,4,1,0,0,1]
+var SEGY = [0,1,6,9,6,1,4]
+var SEGW = [4,2,2,4,2,2,4]
+var SEGH = [2,4,4,2,4,4,2]
+
+func DrawDigit(x, y, d, col)
+    draw.color = col
+    var m = SEG[d]
+    for (var s = 0;s < 7;s++)
+        if (m[s] == 1) then
+            draw.rect(x + SEGX[s], y + SEGY[s], SEGW[s], SEGH[s], true)
+        end
+    end
+end
+
+func DrawNumber(x, y, value, digits, col)
+    var v = int(value)
+    if (v < 0) then v = 0 end
+    for (var i = digits - 1;i >= 0;i--)
+        DrawDigit(x + i * 8, y, v mod 10, col)
+        v = v div 10
+    end
+end
+
+func DrawCenteredText(txt, y, col)
+    draw.text((SCREEN_W / 2) - (txt.size() * 3), y, txt, col)
+end
+
+// ---------------- Fondo ----------------
+func DrawSky()
+    draw.color = colSky1
+    draw.rect(0, 0, SCREEN_W, 44, true)
+    draw.color = colSky2
+    draw.rect(0, 44, SCREEN_W, 34, true)
+    draw.color = colSky3
+    draw.rect(0, 78, SCREEN_W, 32, true)
+    draw.color = colSky4
+    draw.rect(0, 110, SCREEN_W, PLAY_BOT - 110, true)
+end
+
+// Las dos sierras se pintan en columnas de 16 px desplazadas a la
+// izquierda por el resto del scroll, o sea que la fila SIEMPRE empieza
+// fuera de pantalla. Con 20 columnas (SCREEN_W / 16) la fila mide justo
+// el ancho de la pantalla, y ese desplazamiento deja hasta 15 px sin
+// pintar por la DERECHA: se veia entrar el escenario a trozos, como si
+// se dibujara al llegar al borde. Hace falta una columna de mas por cada
+// lado, y el numero se saca del ancho para que no vuelva a descuadrarse.
+const RIDGE_COLS = SCREEN_W div 16 + 2
+
+func DrawRidges()
+    var ofsA = int(scrollX) div 3
+    draw.color = colFar
+    for (var i = 0;i < RIDGE_COLS;i++)
+        var idx = (ofsA div 16 + i) mod FAR_N
+        var h = farH[idx]
+        draw.rect(i * 16 - (ofsA mod 16), h, 17, PLAY_BOT - h, true)
+    end
+
+    var ofsB = int(scrollX) div 2
+    draw.color = colNear
+    for (var j = 0;j < RIDGE_COLS;j++)
+        var idx2 = (ofsB div 16 + j + 9) mod FAR_N
+        var h2 = farH[idx2] + 28
+        draw.rect(j * 16 - (ofsB mod 16), h2, 17, PLAY_BOT - h2, true)
+    end
+end
+
+// ================================================================
+// El escenario como tilemap
+//
+// La colision NO pasa por aqui: sigue yendo por surfY/overY, que es de
+// lo que dependen la parabola del salto y PredictLanding. El GridMap es
+// solo la capa de dibujado, y se pinta una vez al empezar la fase.
+// ================================================================
+const GRID_ROWS = 27        // 27 * 8 px = 216, justo el campo de juego
+
+// El grid se reserva UNA vez con el ancho de la fase mas larga y despues
+// solo se limpia y se repinta. Crear uno nuevo por fase deja 12 KB de
+// basura cada vez, y en el monton del ESP32 eso es pedir fragmentacion a
+// cambio de nada: las columnas que sobran quedan vacias y el culling del
+// renderizador ni las mira.
+const MAX_GRID_COLS = 480
+
+func PaintBridgeGrid()
+    var rDeck = DECK_LOW div TILE_PX
+    var rWalk = DECK_HIGH div TILE_PX
+    var rWater = WATER_Y div TILE_PX
+
+    for (var c = 0;c < phaseCols;c++)
+        // El rio va debajo de todo y no se interrumpe en los huecos:
+        // es justo lo que se ve por ellos.
+        grid.set(c, rWater, T_WATER_TOP)
+        for (var r = rWater + 1;r < GRID_ROWS;r++)
+            grid.set(c, r, r >= rWater + 2 ? T_WATER_DEEP : T_WATER)
+        end
+
+        if (surfY[c] != NO_GROUND) then
+            grid.set(c, rDeck, T_DECK_TOP)
+            grid.set(c, rDeck + 1, T_DECK_BODY)
+            if (c mod 5 == 0) then
+                for (var p = rDeck + 2;p < rWater;p++)
+                    grid.set(c, p, T_PILLAR)
+                end
+            end
+        end
+
+        if (overY[c] != NO_GROUND) then
+            grid.set(c, rWalk, T_WALK_TOP)
+        end
+    end
+end
+
+func PaintHeliGrid()
+    for (var c = 0;c < phaseCols;c++)
+        var r0 = surfY[c] div TILE_PX
+        grid.set(c, r0, T_CANOPY_TOP)
+        for (var r = r0 + 1;r < GRID_ROWS;r++)
+            grid.set(c, r, r > r0 + 2 ? T_CANOPY_DEEP : T_CANOPY)
+        end
+    end
+end
+
+func PaintRiverGrid()
+    var rTop = RIVER_TOP div TILE_PX
+
+    for (var c = 0;c < phaseCols;c++)
+        var rBed = surfY[c] div TILE_PX
+        if (rBed >= GRID_ROWS) then rBed = GRID_ROWS - 1 end
+
+        var shaft = c mod 11 == 0
+
+        grid.set(c, rTop, T_RIVER_TOP)
+        for (var r = rTop + 1;r < rBed;r++)
+            if (r > 16) then
+                grid.set(c, r, T_RIVER_DEEP)
+            elsif (shaft) then
+                grid.set(c, r, T_RIVER_SHAFT)
+            else
+                grid.set(c, r, T_RIVER)
+            end
+        end
+        grid.set(c, rBed, T_BED_TOP)
+        for (var p = rBed + 1;p < GRID_ROWS;p++)
+            grid.set(c, p, T_BED)
+        end
+    end
+end
+
+// El cuartel enemigo: ocho columnas de muro al final del recorrido, con
+// la puerta por la que se recuperan los documentos.
+func PaintHQ(rGround)
+    var c0 = (phaseEndPx + 24) div TILE_PX
+    if (c0 + 8 >= phaseCols) then c0 = phaseCols - 9 end
+
+    for (var i = 0;i < 8;i++)
+        grid.set(c0 + i, rGround - 8, T_HQ_TOP)
+        for (var r = rGround - 7;r < rGround;r++)
+            grid.set(c0 + i, r, T_HQ_WALL)
+        end
+    end
+
+    grid.set(c0 + 1, rGround - 6, T_HQ_WIN)
+    grid.set(c0 + 6, rGround - 6, T_HQ_WIN)
+    for (var d = rGround - 3;d < rGround;d++)
+        grid.set(c0 + 3, d, T_HQ_DOOR)
+        grid.set(c0 + 4, d, T_HQ_DOOR)
+    end
+end
+
+func PaintJungleGrid()
+    var rG = JUNGLE_GROUND div TILE_PX
+    var rPlank = (JUNGLE_GROUND - 48) div TILE_PX
+
+    for (var c = 0;c < phaseCols;c++)
+        if (surfY[c] != NO_GROUND) then
+            grid.set(c, rG, c mod 2 == 0 ? T_GRASS_A : T_GRASS_B)
+            grid.set(c, rG + 1, T_DIRT)
+            for (var r = rG + 2;r < GRID_ROWS;r++)
+                grid.set(c, r, T_DIRT_DEEP)
+            end
+        else
+            for (var p = rG;p < GRID_ROWS;p++)
+                grid.set(c, p, T_PIT)
+            end
+        end
+
+        if (overY[c] != NO_GROUND) then
+            var t = T_PLANK_M
+            if (OverAt(c - 1) == NO_GROUND) then
+                t = T_PLANK_L
+            elsif (OverAt(c + 1) == NO_GROUND) then
+                t = T_PLANK_R
+            end
+            grid.set(c, rPlank, t)
+        end
+    end
+
+    PaintHQ(rG)
+end
+
+func BuildGrid()
+    if (grid == nil) then
+        grid = GridMap.new(MAX_GRID_COLS, GRID_ROWS)
+        grid.tSize(TILE_PX, TILE_PX)
+        grid.tileset = tileset
+        grid.tEmpty(T_EMPTY)
+    end
+    grid.clear(T_EMPTY)
+
+    if (phaseCols > MAX_GRID_COLS) then
+        println(">>> AVISO: la fase tiene ", phaseCols,
+                " columnas y el grid solo ", MAX_GRID_COLS)
+    end
+
+    switch (phaseNum)
+        case PH_BRIDGE :
+            PaintBridgeGrid()
+        case PH_HELI :
+            PaintHeliGrid()
+        case PH_RIVER :
+            PaintRiverGrid()
+        default :
+            PaintJungleGrid()
+    end
+end
+
+// Bajo el agua no hay sierra de fondo: solo la orilla lejana y los rayos
+// de luz que entran por la superficie.
+func DrawRiverSky()
+    draw.color = colSky1
+    draw.rect(0, 0, SCREEN_W, 20, true)
+    draw.color = colSky3
+    draw.rect(0, 20, SCREEN_W, RIVER_TOP - 20, true)
+    draw.color = colWater
+    draw.rect(0, RIVER_TOP, SCREEN_W, PLAY_BOT - RIVER_TOP, true)
+end
+
+func DrawScene()
+    if (phaseNum == PH_RIVER) then
+        DrawRiverSky()
+    else
+        DrawSky()
+        DrawRidges()
+    end
+
+    grid.x = -int(scrollX)
+    grid.y = 0
+    draw.tilemap(grid, tileset, T_EMPTY)
+end
+
+// ---------------- El heroe ----------------
+
+// Burbujas del regulador. Van como primitivas y no dentro del sprite del
+// buzo porque tienen su propio ciclo: suben, se van quedando atras y
+// vuelven a salir, todo ello independiente del fotograma del nadador.
+// El contador se escala por speedScale para que suban al mismo ritmo en
+// segundos aunque en la placa haya menos fotogramas.
+func DrawBubbles(x, y)
+    var t = int(hero.rotor * speedScale * BUBBLE_RISE)
+    var a = t mod 16
+    var b = (t + 6) mod 16
+    var c = (t + 11) mod 22
+
+    draw.color = 0xA0D8F0
+    draw.circle(x + 9 - a div 3, y - 4 - a, 2, true)
+    draw.circle(x + 7 - b div 4, y - 6 - b, 1, true)
+    if (c < 16) then
+        draw.circle(x + 11 - c div 3, y - 3 - c, 1, true)
+    end
+end
+
+// El soldado es el unico que elige postura a mano: tres pasos de andar y
+// una de salto. El resto se autoanima por reloj.
+func HeroSoldierFrame()
+    if (not hero.onGround) then return 3 end
+    return int(hero.anim) mod 3
+end
+
+func DrawHero()
+    if (hero.invuln > 0 and (hero.invuln div 3) mod 2 == 1) then return end
+
+    var x = int(hero.x)
+    var y = int(hero.y)
+
+    switch (hero.md)
+        case PH_BRIDGE :
+            // En los modos de suelo hero.y son los PIES y draw.sprite
+            // ancla por el CENTRO: de ahi la media altura de correccion.
+            sprHeroJeep.x = x
+            sprHeroJeep.y = y - 11
+            draw.sprite(sprHeroJeep)
+
+        case PH_HELI :
+            sprHeroHeli.x = x
+            sprHeroHeli.y = y
+            draw.sprite(sprHeroHeli)
+
+        case PH_RIVER :
+            sprHeroDiver.x = x
+            sprHeroDiver.y = y
+            draw.sprite(sprHeroDiver)
+            DrawBubbles(x, y)
+
+        default :
+            sprHeroSoldier.frame = HeroSoldierFrame()
+            sprHeroSoldier.x = x
+            sprHeroSoldier.y = y - 11
+            draw.sprite(sprHeroSoldier)
+    end
+end
+
+// ---------------- Enemigos ----------------
+func FoeSprite(k)
+    switch (k)
+        case FK_CHOPPER :
+            return sprFoeChopper
+        case FK_JEEP :
+            return sprFoeJeep
+        case FK_PLANE :
+            return sprFoePlane
+        case FK_AA :
+            return sprFoeAA
+        case FK_MINE :
+            return sprFoeMine
+        case FK_FISH :
+            return sprFoeFish
+        case FK_SOLDIER :
+            return sprFoeSoldier
+        default :
+            return sprFoeMortar
+    end
+end
+
+func DrawFoes()
+    foreach (var f in foes)
+        var x = int(f.wx - scrollX)
+        if (x < -40 or x > SCREEN_W + 40) then continue end
+        var s = FoeSprite(f.k)
+        s.x = x
+        s.y = int(f.y)
+        draw.sprite(s)
+    end
+end
+
+func DrawShots()
+    draw.color = COL_PSHOT
+    foreach (var b in pShots)
+        var x = int(b.wx - scrollX)
+        draw.rect(x - 4, int(b.y) - 1, 8, 3, true)
+    end
+
+    foreach (var e in eShots)
+        var ex = int(e.wx - scrollX)
+        if (e.grav) then
+            draw.color = 0x404040
+            draw.circle(ex, int(e.y), 3, true)
+            draw.color = COL_FLAME
+            draw.rect(ex - 1, int(e.y) - 5, 2, 2, true)
+        else
+            draw.color = COL_ESHOT
+            draw.rect(ex - 3, int(e.y) - 1, 6, 3, true)
+        end
+    end
+end
+
+func DrawBlasts()
+    foreach (var b in blasts)
+        var x = int(b.wx - scrollX)
+        var y = int(b.y)
+        var t = b.age * 100 / b.maxAge
+        var r = b.big ? 4 + t * 16 / 100 : 3 + t * 8 / 100
+        if (t < 40) then
+            draw.color = 0xFFF0C0
+        elsif (t < 70) then
+            draw.color = COL_FLAME
+        else
+            draw.color = COL_SMOKE
+        end
+        draw.circle(x, y, r, true)
+        if (t < 55) then
+            draw.color = 0xFFFFFF
+            draw.circle(x, y, r div 2, true)
+        end
+    end
+end
+
+func DrawPicks()
+    foreach (var p in picks)
+        var x = int(p.wx - scrollX)
+        if (x < -20 or x > SCREEN_W + 20) then continue end
+        var y = int(p.y + Math.sin(p.ph) * 2)
+        var s = p.k == PK_MEDAL ? sprPickMedal : sprPickAmmo
+        s.x = x
+        s.y = y
+        draw.sprite(s)
+    end
+end
+
+// ---------------- Panel ----------------
+func DrawHUD()
+    draw.color = COL_PANEL
+    draw.rect(0, HUD_Y, SCREEN_W, HUD_H, true)
+    draw.color = COL_PANEL_HI
+    draw.rect(0, HUD_Y, SCREEN_W, 2, true)
+    draw.color = COL_KHAKI_DK
+    draw.rect(0, HUD_Y + 2, SCREEN_W, 1, true)
+
+    // Marcador y record
+    DrawNumber(6, HUD_Y + 8, score, 6, COL_PSHOT)
+    DrawNumber(62, HUD_Y + 8, hiScore, 6, 0x80B0E0)
+
+    // Fase alcanzada
+    for (var i = 1;i <= TOTAL_PHASES;i++)
+        draw.color = i <= phaseNum ? COL_FLAME : 0x303830
+        draw.rect(120 + i * 9, HUD_Y + 9, 6, 9, true)
+    end
+
+    // Energia
+    draw.color = 0x303830
+    draw.rect(174, HUD_Y + 8, MAX_ENERGY * 11 + 2, 11, true)
+    for (var e = 0;e < energy;e++)
+        draw.color = energy > 1 ? 0x50D050 : COL_RED
+        draw.rect(176 + e * 11, HUD_Y + 10, 9, 7, true)
+    end
+
+    // Vidas: un casco por vida restante
+    for (var l = 0;l < lives;l++)
+        var lx = 250 + l * 16
+        draw.color = COL_KHAKI
+        draw.rect(lx, HUD_Y + 12, 11, 4, true)
+        draw.color = COL_KHAKI_DK
+        draw.rect(lx + 1, HUD_Y + 8, 9, 4, true)
+    end
+
+    if (demoMode) then
+        draw.color = COL_RED
+        draw.rect(232, HUD_Y + 9, 3, 9, true)
+        draw.rect(238, HUD_Y + 9, 3, 9, true)
+    end
+end
+
+func DrawTitle()
+    DrawScene()
+
+    // El jeep rueda por el puente detras del rotulo. A la derecha del
+    // todo: los renglones de controles van centrados y ocupan de la
+    // columna 67 a la 253, y ahi en medio el jeep se comia la primera
+    // tecla de la linea.
+    sprHeroJeep.x = 280
+    sprHeroJeep.y = DECK_LOW - 11
+    draw.sprite(sprHeroJeep)
+
+    draw.color = 0x000000
+    draw.rect(28, 34, 264, 86, true)
+    draw.color = COL_KHAKI
+    draw.rect(28, 34, 264, 86, false)
+    draw.color = COL_KHAKI_DK
+    draw.rect(30, 36, 260, 82, false)
+
+    DrawCenteredText("J A R U   M O V E S", 52, 0xF0E0A0)
+    DrawCenteredText("FOUR PHASE OPERATION", 72, 0x90C0E0)
+    DrawCenteredText("BRIDGE - AIR - RIVER - JUNGLE", 92, 0x80A080)
+
+    if (hasInput) then
+        DrawCenteredText("Z FIRE   X JUMP   ARROWS MOVE", 150, 0xD0D0D0)
+        DrawCenteredText("D = TAKE CONTROL / BACK TO DEMO", 166, 0xD0D0D0)
+    end
+    if (demoMode) then
+        DrawCenteredText("DEMO MODE", 190, 0xFFC040)
+    end
+    DrawHUD()
+end
+
+func DrawGame()
+    if (gameState == GS.TITLE) then
+        DrawTitle()
+        Display.update()
+        return
+    end
+
+    DrawScene()
+    DrawPicks()
+    DrawFoes()
+    DrawShots()
+    if (gameState == GS.PLAY or gameState == GS.CLEAR) then DrawHero() end
+    DrawBlasts()
+
+    if (shakeTimer > 0) then
+        draw.color = COL_RED
+        draw.rect(0, 0, SCREEN_W, 2, true)
+        draw.rect(0, PLAY_BOT - 2, SCREEN_W, 2, true)
+    end
+
+    DrawHUD()
+
+    switch (gameState)
+        case GS.CLEAR :
+            DrawCenteredText("PHASE " + phaseNum.toString() + " CLEARED", 96, 0xFFE040)
+        case GS.DEAD :
+            DrawCenteredText("KILLED IN ACTION", 96, 0xFF6040)
+        case GS.OVER :
+            DrawCenteredText("MISSION FAILED", 88, 0xFF4040)
+            DrawCenteredText("SCORE " + score.toString(), 108, 0xFFFFFF)
+        case GS.WIN :
+            DrawCenteredText("DOCUMENTS RECOVERED", 80, 0xFFE040)
+            DrawCenteredText("MISSION ACCOMPLISHED", 100, 0xFFFFFF)
+            DrawCenteredText("SCORE " + score.toString(), 120, 0x90E090)
+    end
+
+    Display.update()
+end
+
+// ================================================================
+// Maquina de estados
+// ================================================================
+func UpdateGame()
+    ReadInput()
+
+    if (hasInput and keyRestart and gameState != GS.TITLE) then
+        StartTitle()
+        return
+    end
+
+    switch (gameState)
+        case GS.TITLE :
+            scrollX += scrollSpeed * 0.4
+            stateTimer--
+            if (stateTimer <= 0 or (hasInput and not demoMode and inFire)) then
+                NewGame()
+            end
+
+        case GS.PLAY :
+            UpdatePlaying()
+
+        case GS.CLEAR :
+            UpdateBlasts()
+            stateTimer--
+            // El contador es el MINIMO; manda la fanfarria si dura mas
+            if (stateTimer <= 0 and not MusicBusy()) then NextPhase() end
+
+        case GS.DEAD :
+            UpdateBlasts()
+            UpdateShots()
+            stateTimer--
+            if (stateTimer <= 0) then Respawn() end
+
+        case GS.OVER :
+            stateTimer--
+            if (stateTimer <= 0) then StartTitle() end
+
+        case GS.WIN :
+            stateTimer--
+            // La pantalla final aguanta los nueve segundos que dura la
+            // fanfarria de victoria, sin cuadrar fotogramas a mano
+            if (stateTimer <= 0 and not MusicBusy()) then StartTitle() end
+    end
+end
+
+// ================================================================
+// Programa principal
+// ================================================================
+println("JaruMoves - mem use: ", memUse(), " free: ", memFree())
+
+SetupSpeed()
+SetupInput()
+InitScreen()
+InitSound()
+LoadArt()
+
+hero = Hero()
+StartTitle()
+
+println(">>> platform=", platform(), " hasInput=", hasInput,
+        " demo=", demoMode, " speedScale=", speedScale)
+
+var frameCount = 0
+var lastFpsTime = clock()
+
+while (true)
+    frameCount++
+    UpdateGame()
+    DrawGame()
+
+    if (clock() - lastFpsTime >= 1000) then
+        println("FPS ", frameCount, " ph ", phaseNum, " st ", gameState,
+                " x ", int(scrollX), "/", phaseEndPx,
+                " sc ", score, " lv ", lives, " en ", energy,
+                " foes ", foes.size(), " tiros ", shotCount, " mem ", memUse())
+        frameCount = 0
+        lastFpsTime = clock()
+    end
+
+    if (platform() == HW_WIN32) then
+        pause(FRAME_PAUSE_WIN32)
+    end
+end

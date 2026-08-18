@@ -1,0 +1,1 @@
+{"version": 1, "imageNodeID": 18, "imageRelativePath": "Images\\spr_HeroHeli.bmp", "animation": {"fps": 12, "alignment": 0, "isTransparent": true, "backgroundColor": 16711935, "gridWidth": 36, "gridHeight": 20}, "regions": [{"x": 0, "y": 0, "width": 36, "height": 20}, {"x": 36, "y": 0, "width": 36, "height": 20}, {"x": 72, "y": 0, "width": 36, "height": 20}]}

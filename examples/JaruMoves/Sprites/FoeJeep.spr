@@ -1,0 +1,1 @@
+{"version": 1, "imageNodeID": 12, "imageRelativePath": "Images\\spr_FoeJeep.bmp", "animation": {"fps": 1, "alignment": 0, "isTransparent": true, "backgroundColor": 16711935, "gridWidth": 32, "gridHeight": 20}, "regions": [{"x": 0, "y": 0, "width": 32, "height": 20}]}

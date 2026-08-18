@@ -1,0 +1,231 @@
+{
+ "format": "tracker",
+ "version": 1,
+ "tickMs": 25,
+ "volume": 210,
+ "loop": false,
+ "loopStartRow": 0,
+ "rowTicks": 4,
+ "instruments": [
+  {
+   "id": 0,
+   "type": "tone",
+   "wave": "pulse",
+   "volume": 175,
+   "duty": 40,
+   "attackMs": 2,
+   "decayMs": 60,
+   "sustain": 210,
+   "releaseMs": 50,
+   "vibratoDepth": 0,
+   "vibratoRate": 0,
+   "vibratoDelay": 0,
+   "pwmDepth": 0,
+   "pwmRate": 0
+  },
+  {
+   "id": 1,
+   "type": "tone",
+   "wave": "triangle",
+   "volume": 170,
+   "duty": 50,
+   "attackMs": 2,
+   "decayMs": 140,
+   "sustain": 120,
+   "releaseMs": 40,
+   "vibratoDepth": 0,
+   "vibratoRate": 0,
+   "vibratoDelay": 0,
+   "pwmDepth": 0,
+   "pwmRate": 0
+  },
+  {
+   "id": 4,
+   "type": "noise",
+   "volume": 120,
+   "noiseMode": "short",
+   "decayTicks": 2,
+   "attackMs": 0,
+   "decayMs": 0,
+   "sustain": 255,
+   "releaseMs": 0
+  }
+ ],
+ "rows": [
+  {
+   "ch0": {
+    "note": 57,
+    "inst": 0
+   },
+   "ch1": {
+    "note": 45,
+    "inst": 1
+   },
+   "noise": {
+    "period": 14,
+    "inst": 4
+   }
+  },
+  {
+   "noise": {
+    "off": true
+   }
+  },
+  {
+   "ch0": {
+    "note": 60
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 64
+   },
+   "ch1": {
+    "note": 45
+   },
+   "noise": {
+    "period": 14
+   }
+  },
+  {
+   "noise": {
+    "off": true
+   }
+  },
+  {
+   "ch0": {
+    "note": 69
+   }
+  },
+  {},
+  {
+   "ch1": {
+    "note": 52
+   },
+   "noise": {
+    "period": 14
+   }
+  },
+  {
+   "noise": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 67
+   },
+   "ch1": {
+    "note": 45
+   },
+   "noise": {
+    "period": 14
+   }
+  },
+  {
+   "noise": {
+    "off": true
+   }
+  },
+  {
+   "ch0": {
+    "note": 69
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 72
+   },
+   "ch1": {
+    "note": 45
+   },
+   "noise": {
+    "period": 14
+   }
+  },
+  {
+   "noise": {
+    "off": true
+   }
+  },
+  {
+   "ch0": {
+    "note": 76
+   }
+  },
+  {},
+  {
+   "ch1": {
+    "note": 52
+   },
+   "noise": {
+    "period": 14
+   }
+  },
+  {
+   "noise": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {
+   "ch1": {
+    "note": 45
+   },
+   "noise": {
+    "period": 14
+   }
+  },
+  {
+   "noise": {
+    "off": true
+   }
+  },
+  {
+   "ch0": {
+    "note": 81
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch1": {
+    "note": 33
+   },
+   "noise": {
+    "period": 10
+   }
+  },
+  {
+   "noise": {
+    "period": 12
+   }
+  },
+  {
+   "noise": {
+    "period": 14
+   }
+  },
+  {
+   "noise": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {}
+ ]
+}

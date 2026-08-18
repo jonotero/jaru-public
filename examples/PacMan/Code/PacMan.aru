@@ -185,7 +185,7 @@ func InitScreen()
     if (platform() == HW_ESP32) then
         Input.map(0, 38)
         Input.map(2, 39)
-    else if (platform() == HW_WIN32 ) then
+    elsif (platform() == HW_WIN32 ) then
         Input.map(0, "UP")
         Input.map(1, "DOWN")
         Input.map(2, "LEFT")

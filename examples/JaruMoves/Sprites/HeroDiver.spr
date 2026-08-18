@@ -1,0 +1,1 @@
+{"version": 1, "imageNodeID": 17, "imageRelativePath": "Images\\spr_HeroDiver.bmp", "animation": {"fps": 4, "alignment": 0, "isTransparent": true, "backgroundColor": 16711935, "gridWidth": 28, "gridHeight": 16}, "regions": [{"x": 0, "y": 0, "width": 28, "height": 16}, {"x": 28, "y": 0, "width": 28, "height": 16}]}

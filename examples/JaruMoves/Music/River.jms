@@ -1,0 +1,355 @@
+{
+ "format": "tracker",
+ "version": 1,
+ "tickMs": 48,
+ "volume": 180,
+ "loop": true,
+ "loopStartRow": 0,
+ "rowTicks": 4,
+ "instruments": [
+  {
+   "id": 0,
+   "type": "tone",
+   "wave": "sine",
+   "volume": 105,
+   "duty": 50,
+   "attackMs": 1,
+   "decayMs": 180,
+   "sustain": 40,
+   "releaseMs": 140,
+   "vibratoDepth": 0,
+   "vibratoRate": 0,
+   "vibratoDelay": 0,
+   "pwmDepth": 0,
+   "pwmRate": 0
+  },
+  {
+   "id": 1,
+   "type": "tone",
+   "wave": "triangle",
+   "volume": 175,
+   "duty": 50,
+   "attackMs": 2,
+   "decayMs": 130,
+   "sustain": 125,
+   "releaseMs": 40,
+   "vibratoDepth": 0,
+   "vibratoRate": 0,
+   "vibratoDelay": 0,
+   "pwmDepth": 0,
+   "pwmRate": 0
+  },
+  {
+   "id": 3,
+   "type": "tone",
+   "wave": "sine",
+   "volume": 125,
+   "duty": 50,
+   "attackMs": 140,
+   "decayMs": 420,
+   "sustain": 175,
+   "releaseMs": 320,
+   "vibratoDepth": 16,
+   "vibratoRate": 45,
+   "vibratoDelay": 320,
+   "pwmDepth": 0,
+   "pwmRate": 0
+  }
+ ],
+ "rows": [
+  {
+   "ch0": {
+    "off": true
+   },
+   "ch1": {
+    "note": 33,
+    "inst": 1
+   },
+   "ch3": {
+    "note": 60,
+    "inst": 3
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch3": {
+    "note": 64
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   },
+   "ch1": {
+    "note": 33
+   },
+   "ch3": {
+    "note": 60
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 69,
+    "inst": 0
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 76
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 81
+   },
+   "ch3": {
+    "note": 64
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch1": {
+    "note": 38
+   },
+   "ch3": {
+    "note": 65
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch3": {
+    "note": 69
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   },
+   "ch1": {
+    "note": 29
+   },
+   "ch3": {
+    "note": 57
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 65
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 72
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 77
+   },
+   "ch3": {
+    "note": 60
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch1": {
+    "note": 36
+   },
+   "ch3": {
+    "note": 64
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch3": {
+    "note": 67
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   },
+   "ch1": {
+    "note": 38
+   },
+   "ch3": {
+    "note": 65
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 74
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 81
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 86
+   },
+   "ch3": {
+    "note": 69
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch1": {
+    "note": 28
+   },
+   "ch3": {
+    "note": 56
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch3": {
+    "note": 59
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   },
+   "ch1": {
+    "note": 33
+   },
+   "ch3": {
+    "note": 60
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 69
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 76
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 81
+   },
+   "ch3": {
+    "note": 64
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {}
+ ]
+}

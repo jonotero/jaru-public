@@ -1,0 +1,170 @@
+{
+ "format": "tracker",
+ "version": 1,
+ "tickMs": 24,
+ "volume": 210,
+ "loop": false,
+ "loopStartRow": 0,
+ "rowTicks": 4,
+ "instruments": [
+  {
+   "id": 0,
+   "type": "tone",
+   "wave": "pulse",
+   "volume": 175,
+   "duty": 40,
+   "attackMs": 2,
+   "decayMs": 55,
+   "sustain": 215,
+   "releaseMs": 45,
+   "vibratoDepth": 18,
+   "vibratoRate": 70,
+   "vibratoDelay": 200,
+   "pwmDepth": 0,
+   "pwmRate": 0
+  },
+  {
+   "id": 1,
+   "type": "tone",
+   "wave": "triangle",
+   "volume": 175,
+   "duty": 50,
+   "attackMs": 2,
+   "decayMs": 130,
+   "sustain": 125,
+   "releaseMs": 40,
+   "vibratoDepth": 0,
+   "vibratoRate": 0,
+   "vibratoDelay": 0,
+   "pwmDepth": 0,
+   "pwmRate": 0
+  },
+  {
+   "id": 4,
+   "type": "noise",
+   "volume": 125,
+   "noiseMode": "short",
+   "decayTicks": 2,
+   "attackMs": 0,
+   "decayMs": 0,
+   "sustain": 255,
+   "releaseMs": 0
+  }
+ ],
+ "rows": [
+  {
+   "ch0": {
+    "note": 60,
+    "inst": 0
+   },
+   "ch1": {
+    "note": 36,
+    "inst": 1
+   },
+   "noise": {
+    "period": 12,
+    "inst": 4
+   }
+  },
+  {
+   "noise": {
+    "period": 12
+   }
+  },
+  {
+   "ch0": {
+    "note": 64
+   },
+   "noise": {
+    "period": 12
+   }
+  },
+  {
+   "noise": {
+    "period": 12
+   }
+  },
+  {
+   "ch0": {
+    "note": 67
+   },
+   "ch1": {
+    "note": 43
+   },
+   "noise": {
+    "period": 12
+   }
+  },
+  {
+   "noise": {
+    "period": 12
+   }
+  },
+  {
+   "ch0": {
+    "note": 72
+   },
+   "noise": {
+    "period": 30
+   }
+  },
+  {},
+  {
+   "ch1": {
+    "note": 36
+   },
+   "noise": {
+    "off": true
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 71
+   },
+   "noise": {
+    "period": 12
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 72
+   },
+   "ch1": {
+    "note": 48
+   },
+   "noise": {
+    "off": true
+   }
+  },
+  {},
+  {
+   "noise": {
+    "period": 30
+   }
+  },
+  {},
+  {
+   "noise": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   },
+   "ch1": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {}
+ ]
+}

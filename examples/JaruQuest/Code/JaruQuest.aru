@@ -1,0 +1,2157 @@
+// =================================================================
+// JaruQuest - aventura top-down estilo NES para JARU
+// Autor  : Jon Otero
+// Version: 0.1
+//
+// Estructura del juego:
+//   - Dos mundos, cada uno un GridMap grande: el exterior (4x4
+//     pantallas) y la mazmorra (4x3). La "pantalla" es solo lo que
+//     ve la camara; al cruzar un borde la camara salta de pantalla
+//     entera, como en el Zelda de NES. No hay scroll libre.
+//   - Cada mundo tiene DOS capas: la de graficos (_tiles.gmap) que
+//     dibuja draw.scene, y la de celdas (_cells.gmap) que se consulta
+//     para colisiones, disparadores y puntos de aparicion. Estan
+//     separadas para que el arte y el significado no dependan uno del
+//     otro.
+//   - La entrada del jugador y el piloto automatico producen la MISMA
+//     estructura de intencion (Intent). El resto del juego no sabe
+//     cual de los dos la ha rellenado. Sin esa separacion, el modo
+//     demo seria un parche; con ella, es otro productor mas.
+//
+// Controles (Windows): flechas mover, Z atacar, ENTER empezar.
+// En placa sin botones el piloto automatico juega solo; en Windows
+// entra tambien si nadie toca nada durante ATTRACT_MS.
+//
+// Los recursos los genera Tools/ (arte, mapas y proyecto) y el Build
+// del IDE los exporta a Build/Flash. Ver Tools/README.md.
+// =================================================================
+
+use Display, Sprite, Input, GridMap, Scene, Sound
+
+var draw = Display.draw
+
+// --- pantalla y rejilla ------------------------------------------
+const SCREEN_W = 320
+const SCREEN_H = 240
+const HUD_H = 32                     // franja superior del marcador
+const TILE = 16
+const ROOM_COLS = 20
+const ROOM_ROWS = 13
+const ROOM_W = ROOM_COLS * TILE      // 320
+const ROOM_H = ROOM_ROWS * TILE      // 208
+
+const OW_COLS = 4                    // pantallas del exterior
+const OW_ROWS = 4
+const DG_COLS = 4                    // pantallas de la mazmorra
+const DG_ROWS = 3
+
+const WORLD_OVER = 0
+const WORLD_DUNG = 1
+
+// --- valores de la capa de celdas --------------------------------
+// Los escribe Tools/gen_maps.py; el significado esta documentado alli.
+const CELL_FREE = 0
+const CELL_SOLID = 1
+const CELL_BUSH = 2                  // se corta con la espada
+const CELL_DOOR = 3                  // puerta cerrada: hace falta la llave
+const CELL_CAVE = 4                  // disparador: exterior -> mazmorra
+const CELL_EXIT = 5                  // disparador: mazmorra -> exterior
+
+const SPAWN_BASE = 10
+const SPAWN_SPITTER = 10
+const SPAWN_HOPPER = 11
+const SPAWN_OGRE = 12
+const SPAWN_BAT = 13
+const SPAWN_BOSS = 14
+const SPAWN_KEY = 15
+const SPAWN_HEART = 16
+const SPAWN_COIN = 17
+
+// Marca temporal que el piloto automatico escribe en la celda destino
+// para poder pedirle a GridMap.dMap un mapa de distancias hasta ella.
+// Tiene que quedar fuera de `solids` y no chocar con ningun otro valor.
+const CELL_GOAL = 200
+
+// Indice del tile de puerta abierta, para repintar la puerta del jefe
+// cuando se abre (el resto del arte no se toca en tiempo de ejecucion).
+const TILE_DOOR_OPEN = 15
+const TILE_GRASS = 0
+
+// --- direcciones -------------------------------------------------
+const DIR_DOWN = 0
+const DIR_UP = 1
+const DIR_RIGHT = 2
+const DIR_LEFT = 3
+
+// --- tipos de enemigo --------------------------------------------
+const EK_SPITTER = 0
+const EK_HOPPER = 1
+const EK_OGRE = 2
+const EK_BAT = 3
+const EK_BOSS = 4
+
+// --- tipos de objeto ---------------------------------------------
+const IT_HEART = 0
+const IT_KEY = 1
+const IT_COIN = 2
+const IT_RELIC = 3
+
+// --- tipos de proyectil ------------------------------------------
+const SK_ROCK = 0
+const SK_SPEAR = 1
+const SK_FIRE = 2
+
+// --- estados de juego --------------------------------------------
+const ST_TITLE = 0
+const ST_PLAY = 1
+const ST_TRANSITION = 2
+const ST_GAMEOVER = 3
+const ST_WIN = 4
+
+// --- ajuste del juego --------------------------------------------
+// Todas las velocidades van en pixeles por SEGUNDO y se integran con
+// el delta real medido con clock(). Asi la partida corre igual en
+// Windows a 60 fps que en la placa a 25, sin factores de escala por
+// plataforma que haya que recalibrar cada vez.
+const HERO_SPEED = 78.0
+const HERO_HALF = 6                  // caja de 12x12 dentro del sprite de 16
+const HERO_MAX_HEARTS = 6
+const HERO_START_HEARTS = 5
+const ATTACK_MS = 190                // cuanto se ve la espada
+const ATTACK_COOLDOWN_MS = 260
+const INVULN_MS = 900                // parpadeo tras recibir un golpe
+const KNOCKBACK = 70.0               // empuje al recibir dano (px/s)
+const KNOCKBACK_MS = 160
+
+// Ciclo de andar de cuatro tiempos con TRES dibujos: reposo, pie izquierdo,
+// reposo, pie derecho. La pose de reposo aparece dos veces por ciclo, asi que
+// dibujarla una sola vez ahorra un frame por direccion -- 1,5 KB de RAM en
+// total -- sin que se note al mirarlo.
+var WALK_CYCLE = [0, 1, 0, 2]
+const WALK_STEP = 8.0        // pixeles recorridos por pose
+const WALK_PERIOD = 32.0     // cuatro poses
+
+const SWORD_REACH = 13               // desplazamiento del filo respecto al centro
+const SWORD_HALF = 7
+
+const SHOT_SPEED = 132.0
+const SHOT_HALF = 4
+// Los proyectiles salen del BORDE del que dispara y solo si hay sitio
+// para verlos venir. Naciendo en el centro, un enemigo pegado al heroe le
+// mete el disparo dentro sin que exista esquiva posible: eso no es
+// dificultad, es un golpe gratis.
+const SHOT_MUZZLE = 12
+const SHOT_MIN_RANGE = 30
+
+const SPITTER_SPEED = 42.0
+const SPITTER_FIRE_MS = 2100
+const SPITTER_SIGHT = 150            // alcance en pixeles para disparar
+const SPITTER_BAND = 12              // margen para considerarse alineado
+
+const HOPPER_SPEED = 96.0           // solo mientras salta
+const HOPPER_HOP_MS = 420
+const HOPPER_REST_MS = 620
+
+const OGRE_SPEED = 52.0
+const OGRE_FIRE_MS = 2600
+const OGRE_SIGHT = 130
+
+const BAT_SPEED = 74.0
+const BAT_TURN_MS = 520
+
+const BOSS_SPEED = 34.0
+const BOSS_HP = 8
+const BOSS_FIRE_MS = 1700
+const BOSS_HALF = 14
+
+const ENEMY_HALF = 6
+const HURT_FLASH_MS = 140            // parpadeo del enemigo al ser golpeado
+
+const TRANSITION_MS = 260            // deslizamiento entre pantallas
+const ATTRACT_MS = 12000             // sin tocar nada -> entra la demo
+const TITLE_DEMO_MS = 4000           // el titulo arranca solo en modo demo
+
+// --- limites de las reservas -------------------------------------
+// Reservas fijas: las entidades se reciclan en vez de crearse y
+// destruirse, para no darle trabajo al GC en mitad del frame.
+const MAX_ENEMIES = 10
+const MAX_SHOTS = 12
+const MAX_ITEMS = 8
+
+// --- audio -------------------------------------------------------
+// Reparto de los cinco canales, siguiendo la plantilla del 2A03 de la NES
+// (dos pulsos + triangular + ruido) y usando el cuarto canal de tono, que
+// aquella no tenia, para el arpegio. En la NES el arpegio habia que
+// robarselo a un pulso; aqui se puede tener a la vez.
+// Los canales de la musica los reparte el .jmu (melodia, contracanto, bajo,
+// arpegio y ruido); aqui solo importa cual usan los efectos.
+
+// Los efectos comparten canal con el arpegio, que es la voz que menos se
+// echa de menos. No hace falta silenciar la musica: un comando de menor
+// prioridad se descarta mientras suena uno mayor (JaruAudio.cpp:856), asi
+// que el SFX (prioridad 1) manda y el arpegio (prioridad 0) se salta las
+// notas que caigan encima.
+const SFX_CH = 3
+const SFX_PRIO = 1
+
+// Volumenes. La musica y los efectos se mezclan en el mismo bus, asi que lo
+// que importa es la RELACION entre ambos, no el numero absoluto.
+//
+// El volumen efectivo de una voz de musica es
+//     volumen_de_canal * MUSIC_VOLUME / 255
+// (JaruAudio.cpp:1983), y los canales van a 110..215 segun la voz. Con
+// MUSIC_VOLUME a 120 la melodia sale a ~100, por debajo de cualquier efecto.
+//
+// OJO: arrancar una cancion resetea el volumen de musica al de su cabecera
+// (JaruAudio.cpp:1391), asi que setMusicVolume hay que llamarlo DESPUES de
+// cada playMusic, no una vez al inicio. Puesto al inicio parece funcionar
+// hasta el primer cambio de tema.
+const MUSIC_VOLUME = 120
+
+const SFXV_SWORD = 150
+const SFXV_CUT = 140
+const SFXV_HIT = 165
+const SFXV_KILL = 175
+const SFXV_SHOT = 120       // dispara el enemigo: no debe tapar al jugador
+const SFXV_HURT = 195       // el aviso mas importante que hay
+const SFXV_PICKUP = 155
+const SFXV_DOOR = 165
+const SFXV_BOSS = 175
+
+const MUSIC_TITLE = "Music/Title.jmu"
+const MUSIC_FIELD = "Music/Field.jmu"
+const MUSIC_OVER = "Music/GameOver.jmu"
+const MUSIC_WIN = "Music/Victory.jmu"
+
+const WAVE_SQUARE = 0
+
+const MASTER_VOL_WIN = 110
+const MASTER_VOL_ESP = 190
+
+// --- acciones de entrada -----------------------------------------
+enum ACTION
+    UP, DOWN, LEFT, RIGHT, ATTACK, START
+end
+
+// =================================================================
+// Datos
+// =================================================================
+
+// Lo que el juego lee cada frame para mover al heroe. Lo rellena la
+// entrada fisica o el piloto automatico, nunca los dos a la vez.
+struct Intent
+    var dx = 0
+    var dy = 0
+    var attack = false
+end
+
+struct Hero
+    var x = 0.0, y = 0.0
+    var facing = 0
+    var hearts = 3
+    var maxHearts = 3
+    var keys = 0
+    var coins = 0
+    var attackUntil = 0
+    var attackReady = 0
+    var invulnUntil = 0
+    var knockX = 0.0, knockY = 0.0
+    var knockUntil = 0
+    var walkPhase = 0.0              // avanza con el movimiento, no con el reloj
+end
+
+struct Ent
+    var kind = 0
+    var x = 0.0, y = 0.0
+    var vx = 0.0, vy = 0.0
+    var hp = 1
+    var alive = false
+    var facing = 0
+    var state = 0
+    var nextAt = 0                   // instante del proximo cambio de estado
+    var hurtUntil = 0
+    var half = 6
+end
+
+struct Shot
+    var kind = 0
+    var x = 0.0, y = 0.0
+    var vx = 0.0, vy = 0.0
+    var alive = false
+end
+
+struct Item
+    var kind = 0
+    var x = 0.0, y = 0.0
+    var alive = false
+end
+
+// =================================================================
+// Estado global
+// =================================================================
+var gameState = ST_TITLE
+
+var tileset = nil
+var owTiles = nil
+var owCells = nil
+var dgTiles = nil
+var dgCells = nil
+var scene = nil
+
+var world = WORLD_OVER
+var tilesGrid = nil                  // capa de graficos del mundo activo
+var cells = nil                      // capa de celdas del mundo activo
+var worldCols = 0                    // pantallas del mundo activo
+var worldRows = 0
+
+var roomCol = 0
+var roomRow = 0
+var camX = 0.0
+var camY = 0.0
+var camFromX = 0.0
+var camFromY = 0.0
+var camToX = 0.0
+var camToY = 0.0
+var transitionUntil = 0
+
+var hero = nil
+var enemies = []
+var shots = []
+var items = []
+
+var intent = nil
+
+// Progreso de la partida. `bossDead` y `hasKey` evitan que la llave y
+// el jefe vuelvan a aparecer al reentrar en su sala; los enemigos
+// normales SI reaparecen, como en el original.
+var hasKey = false
+var bossDead = false
+var doorOpen = false
+var wonAt = 0
+var gameOverUntil = 0
+var titleAt = 0
+
+// Sprites (plantillas compartidas: cada entidad las dibuja moviendolas,
+// no se clona una por bicho, que multiplicaria los frames en RAM).
+var sprHeroDown = nil
+var sprHeroUp = nil
+var sprHeroSide = nil
+var sprSwordDown = nil
+var sprSwordUp = nil
+var sprSwordSide = nil
+var sprSpitter = nil
+var sprHopper = nil
+var sprOgre = nil
+var sprBat = nil
+var sprShotRock = nil
+var sprShotSpear = nil
+var sprShotFire = nil
+var sprHeart = nil
+var sprCoin = nil
+var sprKey = nil
+var sprRelic = nil
+var sprBoss = nil
+
+// La portada. Ocupa 320x240 a 16 bits = 150 KB en RAM, mas que todo el
+// resto del juego junto, asi que se carga al entrar en el titulo y se
+// suelta al empezar la partida en vez de tenerla residente.
+var coverBmp = nil
+
+// Entrada / piloto
+var hasInput = false
+var autoPlay = true
+var lastHumanAt = 0
+
+// Navegacion del piloto: mapa de distancias y celda objetivo actual.
+var navMap = nil
+var navGoalX = -1
+var navGoalY = -1
+var navSavedVal = 0
+var aiAttackAt = 0
+var aiRetreatUntil = 0
+var aiPhase = -1
+var aiGoalCell = nil
+var aiWanderDir = 0
+var aiWanderUntil = 0
+
+// Reloj de frame
+var lastTick = 0
+var dt = 0.0
+
+var soundOk = false
+var musCurrent = ""
+
+var frames = 0
+var fpsAt = 0
+
+// =================================================================
+// Utilidades
+// =================================================================
+func Clamp(v, lo, hi)
+    if (v < lo) then return lo end
+    if (v > hi) then return hi end
+    return v
+end
+
+func Sign(v)
+    if (v > 0) then return 1 end
+    if (v < 0) then return -1 end
+    return 0
+end
+
+// Solape de dos cajas centradas (todo el juego usa cajas centradas en
+// el sprite, no esquinas: la mitad de los errores de colision de un
+// top-down vienen de mezclar los dos convenios).
+func Overlap(ax, ay, ah, bx, by, bh)
+    if (ax + ah <= bx - bh) then return false end
+    if (ax - ah >= bx + bh) then return false end
+    if (ay + ah <= by - bh) then return false end
+    if (ay - ah >= by + bh) then return false end
+    return true
+end
+
+func RoomLeft()
+    return roomCol * ROOM_W
+end
+
+func RoomTop()
+    return roomRow * ROOM_H
+end
+
+// =================================================================
+// Inicializacion
+// =================================================================
+func InitScreen()
+    Display.viewWidth = SCREEN_W
+    Display.viewHeight = SCREEN_H
+    Display.open(SCREEN_W, SCREEN_H)
+    draw.colorBG = 0x000000
+    Display.autoClear = true
+    Display.showBG = false
+    Display.mode(2)                  // doble buffer: el lienzo es de 8 bits
+    Display.update()
+end
+
+func SetupInput()
+    if (platform() == HW_WIN32) then
+        Input.map(ACTION.UP, "UP")
+        Input.map(ACTION.DOWN, "DOWN")
+        Input.map(ACTION.LEFT, "LEFT")
+        Input.map(ACTION.RIGHT, "RIGHT")
+        Input.map(ACTION.ATTACK, "Z")
+        Input.map(ACTION.START, "ENTER")
+        hasInput = true
+    else
+        // Placas sin botones cableados todavia. Cuando los haya, basta
+        // con mapear aqui los pines y poner hasInput = true: el resto
+        // del juego lee Intent, no el hardware.
+        hasInput = false
+    end
+end
+
+func InitSound()
+    soundOk = Sound.init()
+    if (not soundOk) then
+        println(">>> no audio")
+        return
+    end
+    if (platform() == HW_WIN32) then
+        Sound.setMasterVolume(MASTER_VOL_WIN)
+    else
+        Sound.setMasterVolume(MASTER_VOL_ESP)
+    end
+    Sound.stopAll()
+end
+
+func LoadSprites()
+    sprHeroDown = Sprite.load("Sprites/Hero_Down.spr")
+    sprHeroUp = Sprite.load("Sprites/Hero_Up.spr")
+    sprHeroSide = Sprite.load("Sprites/Hero_Side.spr")
+    sprSwordDown = Sprite.load("Sprites/Sword_Down.spr")
+    sprSwordUp = Sprite.load("Sprites/Sword_Up.spr")
+    sprSwordSide = Sprite.load("Sprites/Sword_Side.spr")
+    sprSpitter = Sprite.load("Sprites/Spitter.spr")
+    sprHopper = Sprite.load("Sprites/Hopper.spr")
+    sprOgre = Sprite.load("Sprites/Ogre.spr")
+    sprBat = Sprite.load("Sprites/Bat.spr")
+    sprShotRock = Sprite.load("Sprites/ShotRock.spr")
+    sprShotSpear = Sprite.load("Sprites/ShotSpear.spr")
+    sprShotFire = Sprite.load("Sprites/ShotFire.spr")
+    sprHeart = Sprite.load("Sprites/ItemHeart.spr")
+    sprCoin = Sprite.load("Sprites/ItemCoin.spr")
+    sprKey = Sprite.load("Sprites/ItemKey.spr")
+    sprRelic = Sprite.load("Sprites/ItemRelic.spr")
+    sprBoss = Sprite.load("Sprites/Boss.spr")
+
+    // Los frames se eligen a mano en cada draw() (la direccion manda
+    // sobre el reloj), asi que se desactiva la animacion automatica.
+    // Con frameRate 0 SpriteTickAnimation no toca currentFrame.
+    NoAutoAnim(sprHeroDown)
+    NoAutoAnim(sprHeroUp)
+    NoAutoAnim(sprHeroSide)
+    NoAutoAnim(sprSpitter)
+    NoAutoAnim(sprHopper)
+    NoAutoAnim(sprOgre)
+    NoAutoAnim(sprBat)
+    NoAutoAnim(sprBoss)
+end
+
+func NoAutoAnim(spr)
+    if (spr == nil) then return end
+    spr.frameRate = 0
+    spr.loop = true                  // con loop=false una animacion que
+                                     // termina se autodesactiva
+    spr.frame = 0
+end
+
+func LoadWorlds()
+    tileset = Bitmap.load("Images/Tiles.bmp")
+
+    owTiles = GridMap.load("Maps/Overworld_tiles.gmap")
+    owTiles.tileset = tileset
+    owTiles.tSize(TILE, TILE)
+    owCells = GridMap.load("Maps/Overworld_cells.gmap")
+
+    dgTiles = GridMap.load("Maps/Dungeon_tiles.gmap")
+    dgTiles.tileset = tileset
+    dgTiles.tSize(TILE, TILE)
+    dgCells = GridMap.load("Maps/Dungeon_cells.gmap")
+
+    // Lo que bloquea el paso. El arbusto y la puerta cerrada tambien
+    // frenan: el primero hasta que se corta, la segunda hasta la llave.
+    owCells.solids = [CELL_SOLID, CELL_BUSH, CELL_DOOR]
+    dgCells.solids = [CELL_SOLID, CELL_BUSH, CELL_DOOR]
+
+    scene = Scene.new()
+    scene.physics = false            // top-down puro: nada de gravedad
+end
+
+func InitPools()
+    var i = 0
+    while (i < MAX_ENEMIES)
+        enemies.append(Ent())
+        i++
+    end
+    i = 0
+    while (i < MAX_SHOTS)
+        shots.append(Shot())
+        i++
+    end
+    i = 0
+    while (i < MAX_ITEMS)
+        items.append(Item())
+        i++
+    end
+end
+
+// =================================================================
+// Mundo y pantallas
+// =================================================================
+func UseWorld(w)
+    world = w
+    if (w == WORLD_OVER) then
+        tilesGrid = owTiles
+        cells = owCells
+        worldCols = OW_COLS
+        worldRows = OW_ROWS
+    else
+        tilesGrid = dgTiles
+        cells = dgCells
+        worldCols = DG_COLS
+        worldRows = DG_ROWS
+    end
+    scene.setGridMap(tilesGrid)
+    navMap = nil                     // el mapa de distancias era del otro mundo
+    navGoalX = -1
+    aiPhase = -1                     // y el objetivo tambien era de alli
+end
+
+func CellAt(cx, cy)
+    if (cx < 0 or cy < 0) then return CELL_SOLID end
+    if (cx >= worldCols * ROOM_COLS or cy >= worldRows * ROOM_ROWS) then
+        return CELL_SOLID
+    end
+    return cells.get(cx, cy)
+end
+
+func CellAtPixel(px, py)
+    return CellAt(int(px) div TILE, int(py) div TILE)
+end
+
+func BlocksMovement(v)
+    return v == CELL_SOLID or v == CELL_BUSH or v == CELL_DOOR
+end
+
+// Caja centrada contra la capa de celdas. Con una caja de 12 px sobre
+// tiles de 16 basta con mirar las cuatro esquinas: ningun tile puede
+// quedar dentro de la caja sin tocar al menos una.
+func BoxBlocked(x, y, half)
+    var x0 = x - half
+    var x1 = x + half - 1
+    var y0 = y - half
+    var y1 = y + half - 1
+    if (BlocksMovement(CellAtPixel(x0, y0))) then return true end
+    if (BlocksMovement(CellAtPixel(x1, y0))) then return true end
+    if (BlocksMovement(CellAtPixel(x0, y1))) then return true end
+    if (BlocksMovement(CellAtPixel(x1, y1))) then return true end
+    return false
+end
+
+// Movimiento con resolucion por ejes y "corner cutting": si al avanzar
+// solo choca una de las dos esquinas de cabeza, el cuerpo se desliza un
+// pixel hacia el lado libre en vez de quedarse clavado. Es exactamente
+// lo que separa un top-down que se siente bien de uno que se atasca en
+// cada esquina.
+// El deslizamiento tiene que ser PROGRESIVO: la caja es de 12 px sobre
+// tiles de 16, asi que rozar una esquina puede exigir apartarse hasta 5
+// px. Si solo se acepta el desplazamiento cuando el avance ya cabe (un
+// pixel no basta), el cuerpo se queda clavado contra la esquina para
+// siempre. Aqui se aparta cada frame aunque el avance siga bloqueado, y
+// en cuanto queda alineado pasa.
+func MoveX(ent, dx, half)
+    if (dx == 0) then return false end
+    var nx = ent.x + dx
+    if (not BoxBlocked(nx, ent.y, half)) then
+        ent.x = nx
+        return false
+    end
+
+    var lead = dx > 0 ? nx + half - 1 : nx - half
+    var topBlocked = BlocksMovement(CellAtPixel(lead, ent.y - half))
+    var botBlocked = BlocksMovement(CellAtPixel(lead, ent.y + half - 1))
+    if (topBlocked == botBlocked) then return true end   // pared plana
+
+    var nudge = abs(dx)
+    if (nudge < 1.0) then nudge = 1.0 end
+    var ny = ent.y + (topBlocked ? nudge : -nudge)
+    if (BoxBlocked(ent.x, ny, half)) then return true end
+    ent.y = ny
+    if (not BoxBlocked(nx, ny, half)) then ent.x = nx end
+    return true
+end
+
+func MoveY(ent, dy, half)
+    if (dy == 0) then return false end
+    var ny = ent.y + dy
+    if (not BoxBlocked(ent.x, ny, half)) then
+        ent.y = ny
+        return false
+    end
+
+    var lead = dy > 0 ? ny + half - 1 : ny - half
+    var leftBlocked = BlocksMovement(CellAtPixel(ent.x - half, lead))
+    var rightBlocked = BlocksMovement(CellAtPixel(ent.x + half - 1, lead))
+    if (leftBlocked == rightBlocked) then return true end
+
+    var nudge = abs(dy)
+    if (nudge < 1.0) then nudge = 1.0 end
+    var nx = ent.x + (leftBlocked ? nudge : -nudge)
+    if (BoxBlocked(nx, ent.y, half)) then return true end
+    ent.x = nx
+    if (not BoxBlocked(nx, ny, half)) then ent.y = ny end
+    return true
+end
+
+func ClearEntities()
+    foreach (var e in enemies)
+        e.alive = false
+    end
+    foreach (var s in shots)
+        s.alive = false
+    end
+    foreach (var it in items)
+        it.alive = false
+    end
+end
+
+func SpawnEnemy(kind, x, y)
+    foreach (var e in enemies)
+        if (not e.alive) then
+            e.kind = kind
+            e.x = x
+            e.y = y
+            e.vx = 0.0
+            e.vy = 0.0
+            e.alive = true
+            e.facing = DIR_DOWN
+            e.state = 0
+            e.nextAt = clock() + random(200, 900)
+            e.hurtUntil = 0
+            if (kind == EK_BOSS) then
+                e.hp = BOSS_HP
+                e.half = BOSS_HALF
+            else
+                e.hp = kind == EK_OGRE ? 2 : 1
+                e.half = ENEMY_HALF
+            end
+            return e
+        end
+    end
+    return nil
+end
+
+func SpawnItem(kind, x, y)
+    foreach (var it in items)
+        if (not it.alive) then
+            it.kind = kind
+            it.x = x
+            it.y = y
+            it.alive = true
+            return it
+        end
+    end
+    return nil
+end
+
+func SpawnShot(kind, x, y, vx, vy)
+    foreach (var s in shots)
+        if (not s.alive) then
+            s.kind = kind
+            s.x = x
+            s.y = y
+            s.vx = vx
+            s.vy = vy
+            s.alive = true
+            return s
+        end
+    end
+    return nil
+end
+
+// Recorre las 260 celdas de la pantalla buscando marcadores. Es la
+// unica lectura completa de la rejilla que hace el juego, y ocurre una
+// vez por cambio de pantalla, no por frame.
+func SpawnRoomEntities()
+    var ox = roomCol * ROOM_COLS
+    var oy = roomRow * ROOM_ROWS
+    for (var y = 0; y < ROOM_ROWS; y++)
+        for (var x = 0; x < ROOM_COLS; x++)
+            var v = cells.get(ox + x, oy + y)
+            if (v >= SPAWN_BASE) then
+                var wx = (ox + x) * TILE + TILE / 2
+                var wy = (oy + y) * TILE + TILE / 2
+                if (v == SPAWN_SPITTER) then
+                    SpawnEnemy(EK_SPITTER, wx, wy)
+                elsif (v == SPAWN_HOPPER) then
+                    SpawnEnemy(EK_HOPPER, wx, wy)
+                elsif (v == SPAWN_OGRE) then
+                    SpawnEnemy(EK_OGRE, wx, wy)
+                elsif (v == SPAWN_BAT) then
+                    SpawnEnemy(EK_BAT, wx, wy)
+                elsif (v == SPAWN_BOSS) then
+                    if (not bossDead) then SpawnEnemy(EK_BOSS, wx, wy) end
+                elsif (v == SPAWN_KEY) then
+                    if (not hasKey) then SpawnItem(IT_KEY, wx, wy) end
+                elsif (v == SPAWN_HEART) then
+                    SpawnItem(IT_HEART, wx, wy)
+                elsif (v == SPAWN_COIN) then
+                    if (not CoinTaken(ox + x, oy + y)) then
+                        SpawnItem(IT_COIN, wx, wy)
+                    end
+                end
+            end
+        end
+    end
+    // El jefe ya muerto deja el trofeo en su sala hasta que se recoge.
+    if (bossDead and world == WORLD_DUNG and RelicPending()) then
+        SpawnRelicHere()
+    end
+end
+
+var relicTaken = false
+var relicRoomCol = -1
+var relicRoomRow = -1
+
+func RelicPending()
+    if (relicTaken) then return false end
+    return roomCol == relicRoomCol and roomRow == relicRoomRow
+end
+
+// Monedas del mapa ya recogidas, como pares planos [x, y, ...]. Las que
+// caen de un enemigo no entran aqui: los enemigos reaparecen y su botin
+// tambien, igual que en el original.
+var coinsTaken = []
+
+func CoinTaken(cx, cy)
+    var i = 0
+    while (i < len(coinsTaken))
+        if (coinsTaken[i] == cx and coinsTaken[i + 1] == cy) then return true end
+        i = i + 2
+    end
+    return false
+end
+
+func SpawnRelicHere()
+    SpawnItem(IT_RELIC, roomCol * ROOM_W + ROOM_W / 2,
+              roomRow * ROOM_H + ROOM_H / 2)
+end
+
+func EnterRoom(rc, rr, slide)
+    roomCol = rc
+    roomRow = rr
+    camToX = rc * ROOM_W
+    camToY = rr * ROOM_H - HUD_H
+    if (slide) then
+        camFromX = camX
+        camFromY = camY
+        transitionUntil = clock() + TRANSITION_MS
+        gameState = ST_TRANSITION
+    else
+        camX = camToX
+        camY = camToY
+    end
+    ClearEntities()
+    SpawnRoomEntities()
+
+    // Medio segundo de gracia al entrar: aparecer pegado a un enemigo y
+    // comerse el golpe sin haber podido reaccionar no es dificultad.
+    hero.invulnUntil = clock() + 500
+
+    navGoalX = -1                    // el objetivo del piloto era de otra sala
+    navMap = nil
+    println("[room] ", world == WORLD_OVER ? "overworld" : "dungeon",
+            " ", rc, ",", rr, "  foes=", EnemiesAlive())
+end
+
+// El heroe cambia de pantalla al salirse de la actual. Se le mete unos
+// pixeles dentro de la nueva para que no rebote inmediatamente hacia
+// atras por el redondeo.
+func CheckRoomChange()
+    var rc = int(hero.x) div ROOM_W
+    var rr = int(hero.y) div ROOM_H
+    if (rc == roomCol and rr == roomRow) then return end
+    rc = Clamp(rc, 0, worldCols - 1)
+    rr = Clamp(rr, 0, worldRows - 1)
+    if (rc == roomCol and rr == roomRow) then return end
+    var dx = rc - roomCol
+    var dy = rr - roomRow
+    // Entrar bien adentro, no rozando el borde: pegado a la linea
+    // cualquier empujon vuelve a disparar el cambio de sala.
+    hero.x = hero.x + dx * 12
+    hero.y = hero.y + dy * 12
+    EnterRoom(rc, rr, true)
+end
+
+// =================================================================
+// Heroe
+// =================================================================
+func HeroReset(w, rc, rr, cx, cy)
+    UseWorld(w)
+    hero.x = (rc * ROOM_COLS + cx) * TILE + TILE / 2
+    hero.y = (rr * ROOM_ROWS + cy) * TILE + TILE / 2
+    hero.facing = DIR_DOWN
+    hero.attackUntil = 0
+    hero.attackReady = 0
+    hero.invulnUntil = 0
+    hero.knockUntil = 0
+    EnterRoom(rc, rr, false)
+end
+
+func HeroAttacking()
+    return clock() < hero.attackUntil
+end
+
+func SwordX()
+    if (hero.facing == DIR_LEFT) then return hero.x - SWORD_REACH end
+    if (hero.facing == DIR_RIGHT) then return hero.x + SWORD_REACH end
+    return hero.x
+end
+
+func SwordY()
+    if (hero.facing == DIR_UP) then return hero.y - SWORD_REACH end
+    if (hero.facing == DIR_DOWN) then return hero.y + SWORD_REACH end
+    return hero.y
+end
+
+func HeroAttack()
+    if (clock() < hero.attackReady) then return end
+    hero.attackUntil = clock() + ATTACK_MS
+    hero.attackReady = clock() + ATTACK_COOLDOWN_MS
+    SfxSword()
+    CutBushAt(SwordX(), SwordY())
+end
+
+// La espada corta el arbusto: se pone la celda libre y se repinta el
+// tile con el suelo del mundo. Hay que tocar las DOS capas o la hierba
+// seguiria dibujando un arbusto por el que ya se puede pasar.
+func CutBushAt(px, py)
+    var cx = int(px) div TILE
+    var cy = int(py) div TILE
+    if (CellAt(cx, cy) != CELL_BUSH) then return end
+    cells.set(cx, cy, CELL_FREE)
+    tilesGrid.set(cx, cy, TILE_GRASS)
+    SfxCut()
+end
+
+func HeroHurt(fromX, fromY)
+    if (clock() < hero.invulnUntil) then return end
+    hero.hearts--
+    hero.invulnUntil = clock() + INVULN_MS
+    var dx = hero.x - fromX
+    var dy = hero.y - fromY
+    if (abs(dx) > abs(dy)) then
+        hero.knockX = Sign(dx) * KNOCKBACK
+        hero.knockY = 0.0
+    else
+        hero.knockX = 0.0
+        hero.knockY = Sign(dy) * KNOCKBACK
+    end
+    hero.knockUntil = clock() + KNOCKBACK_MS
+    SfxHurt()
+    if (hero.hearts <= 0) then
+        println("[death] room ", roomCol, ",", roomRow)
+        gameState = ST_GAMEOVER
+        // El tema de game over dura 3 compases (~6 s); la espera se ajusta
+        // a el para que no se corte a la mitad ni deje silencio de sobra.
+        gameOverUntil = clock() + 6200
+        MusicPlay(MUSIC_OVER, false)
+    end
+end
+
+func UpdateHero()
+    // El empuje del golpe manda sobre el control mientras dura, pero se
+    // queda DENTRO de la pantalla. Sin esta sujecion, recibir un golpe
+    // nada mas cruzar una puerta te devuelve a la sala anterior, y como
+    // el piloto vuelve a entrar en cuanto puede, se monta un bucle de
+    // entrar-salir que ademas le come la vida a picotazos.
+    if (clock() < hero.knockUntil) then
+        MoveX(hero, hero.knockX * dt, HERO_HALF)
+        MoveY(hero, hero.knockY * dt, HERO_HALF)
+        hero.x = Clamp(hero.x, RoomLeft() + 8, RoomLeft() + ROOM_W - 8)
+        hero.y = Clamp(hero.y, RoomTop() + 8, RoomTop() + ROOM_H - 8)
+        return
+    end
+
+    var dx = intent.dx
+    var dy = intent.dy
+
+    // Sin diagonales, como en el original: se prioriza el eje nuevo.
+    // Ademas ordena la mira de la espada, que solo tiene 4 direcciones.
+    if (dx != 0 and dy != 0) then
+        if (hero.facing == DIR_UP or hero.facing == DIR_DOWN) then
+            dx = 0
+        else
+            dy = 0
+        end
+    end
+
+    // Con la espada fuera no se gira. Ahora que se puede andar durante el
+    // golpe, dejar que el movimiento reescribiera el encaramiento hacia
+    // que lado mira ponia la espada a la espalda -- y con ella su caja de
+    // golpeo, que es la que decide a quien se le pega.
+    if ((dx != 0 or dy != 0) and not HeroAttacking()) then
+        if (dx > 0) then hero.facing = DIR_RIGHT
+        elsif (dx < 0) then hero.facing = DIR_LEFT
+        elsif (dy > 0) then hero.facing = DIR_DOWN
+        else hero.facing = DIR_UP end
+    end
+
+    // Durante el golpe se sigue pudiendo andar, pero a media velocidad:
+    // el golpe pesa y no se puede barrer la sala corriendo con la espada
+    // por delante, pero tampoco te deja clavado. Con el heroe inmovil los
+    // 190 ms del ataque eran justo la ventana en la que entraban todas
+    // las piedras -- y el original compensa eso con un escudo que aqui no
+    // existe.
+    var step = HERO_SPEED * dt
+    if (HeroAttacking()) then step = step * 0.45 end
+    MoveX(hero, dx * step, HERO_HALF)
+    MoveY(hero, dy * step, HERO_HALF)
+    if (dx != 0 or dy != 0) then
+        hero.walkPhase = hero.walkPhase + step
+        if (hero.walkPhase >= WALK_PERIOD) then
+            hero.walkPhase = hero.walkPhase - WALK_PERIOD
+        end
+    else
+        // Parado, en la pose de reposo: sin esto el heroe se queda congelado
+        // a media zancada al soltar la direccion.
+        hero.walkPhase = 0.0
+    end
+
+    if (intent.attack) then HeroAttack() end
+
+    CheckTriggers()
+end
+
+// Disparadores del suelo: cueva y escalera. Se leen del centro del
+// heroe, no de la caja, para que haya que pisarlos de verdad.
+func CheckTriggers()
+    var v = CellAtPixel(hero.x, hero.y)
+    if (v == CELL_CAVE and world == WORLD_OVER) then
+        SfxDoor()
+        HeroReset(WORLD_DUNG, 1, 2, 9, 7)
+    elsif (v == CELL_EXIT and world == WORLD_DUNG) then
+        SfxDoor()
+        HeroReset(WORLD_OVER, 2, 0, 9, 3)
+    end
+end
+
+// Abre la puerta del jefe si el heroe tiene la llave y esta pegado a
+// ella. Repinta las celdas y los tiles de la puerta entera.
+func TryOpenDoor()
+    if (doorOpen or hero.keys <= 0) then return end
+    var cx = int(hero.x) div TILE
+    var cy = int(hero.y) div TILE
+    var found = false
+    for (var oy = -2; oy <= 2; oy++)
+        for (var ox = -2; ox <= 2; ox++)
+            if (CellAt(cx + ox, cy + oy) == CELL_DOOR) then found = true end
+        end
+    end
+    if (not found) then return end
+
+    // La puerta ocupa varias celdas contiguas: se abren todas.
+    var w = worldCols * ROOM_COLS
+    var h = worldRows * ROOM_ROWS
+    for (var y = 0; y < h; y++)
+        for (var x = 0; x < w; x++)
+            if (cells.get(x, y) == CELL_DOOR) then
+                cells.set(x, y, CELL_FREE)
+                tilesGrid.set(x, y, TILE_DOOR_OPEN)
+            end
+        end
+    end
+    hero.keys--
+    doorOpen = true
+    navGoalX = -1
+    SfxDoor()
+    println("[door] opened")
+end
+
+// =================================================================
+// Enemigos
+// =================================================================
+func EnemySprite(e)
+    if (e.kind == EK_SPITTER) then return sprSpitter end
+    if (e.kind == EK_HOPPER) then return sprHopper end
+    if (e.kind == EK_OGRE) then return sprOgre end
+    if (e.kind == EK_BAT) then return sprBat end
+    return sprBoss
+end
+
+// Anda en la direccion marcada y avisa si se ha topado con algo, para
+// que quien llame decida si darse la vuelta.
+func EnemyWalk(e, dx, dy, speed)
+    var blockedX = MoveX(e, dx * speed * dt, e.half)
+    var blockedY = MoveY(e, dy * speed * dt, e.half)
+    return blockedX or blockedY
+end
+
+func FireShot(e, kind, ux, uy)
+    SpawnShot(kind,
+              e.x + ux * (e.half + SHOT_MUZZLE),
+              e.y + uy * (e.half + SHOT_MUZZLE),
+              ux * SHOT_SPEED, uy * SHOT_SPEED)
+    SfxShot()
+end
+
+func RandomDir()
+    var r = random(0, 3)
+    return r
+end
+
+func DirVecX(d)
+    if (d == DIR_LEFT) then return -1 end
+    if (d == DIR_RIGHT) then return 1 end
+    return 0
+end
+
+func DirVecY(d)
+    if (d == DIR_UP) then return -1 end
+    if (d == DIR_DOWN) then return 1 end
+    return 0
+end
+
+// El spitter patrulla en las cuatro direcciones y escupe una piedra
+// cuando el heroe le queda alineado y a tiro.
+func UpdateSpitter(e)
+    if (clock() >= e.nextAt) then
+        e.facing = RandomDir()
+        e.nextAt = clock() + random(700, 1600)
+    end
+    if (EnemyWalk(e, DirVecX(e.facing), DirVecY(e.facing), SPITTER_SPEED)) then
+        e.facing = RandomDir()
+        e.nextAt = clock() + random(500, 1200)
+    end
+
+    if (e.state > clock()) then return end
+    var dx = hero.x - e.x
+    var dy = hero.y - e.y
+    if (abs(dx) + abs(dy) < SHOT_MIN_RANGE) then return end
+
+    var fire = false
+    if (abs(dy) < SPITTER_BAND and abs(dx) < SPITTER_SIGHT) then
+        e.facing = dx > 0 ? DIR_RIGHT : DIR_LEFT
+        fire = true
+    elsif (abs(dx) < SPITTER_BAND and abs(dy) < SPITTER_SIGHT) then
+        e.facing = dy > 0 ? DIR_DOWN : DIR_UP
+        fire = true
+    end
+    if (fire) then
+        FireShot(e, SK_ROCK, DirVecX(e.facing), DirVecY(e.facing))
+        e.state = clock() + SPITTER_FIRE_MS
+    end
+end
+
+// El hopper alterna reposo y salto. En el salto conserva la direccion
+// elegida al despegar, asi que se le puede esquivar leyendo el arranque.
+func UpdateHopper(e)
+    if (clock() >= e.nextAt) then
+        if (e.state == 0) then
+            e.state = 1
+            e.nextAt = clock() + HOPPER_HOP_MS
+            var toHero = random(0, 2) > 0
+            if (toHero) then
+                e.vx = Sign(hero.x - e.x) * HOPPER_SPEED
+                e.vy = Sign(hero.y - e.y) * HOPPER_SPEED
+            else
+                e.vx = (random(0, 1) * 2 - 1) * HOPPER_SPEED
+                e.vy = (random(0, 1) * 2 - 1) * HOPPER_SPEED
+            end
+        else
+            e.state = 0
+            e.nextAt = clock() + HOPPER_REST_MS
+            e.vx = 0.0
+            e.vy = 0.0
+        end
+    end
+    if (e.state == 1) then
+        if (MoveX(e, e.vx * dt, e.half)) then e.vx = -e.vx end
+        if (MoveY(e, e.vy * dt, e.half)) then e.vy = -e.vy end
+    end
+end
+
+// El ogre persigue por el eje mas alejado y lanza una lanza cuando
+// tiene al heroe delante.
+func UpdateOgre(e)
+    var dx = hero.x - e.x
+    var dy = hero.y - e.y
+    if (abs(dx) > abs(dy)) then
+        e.facing = dx > 0 ? DIR_RIGHT : DIR_LEFT
+    else
+        e.facing = dy > 0 ? DIR_DOWN : DIR_UP
+    end
+    EnemyWalk(e, DirVecX(e.facing), DirVecY(e.facing), OGRE_SPEED)
+
+    if (e.state > clock()) then return end
+    var dist = abs(dx) + abs(dy)
+    if (dist > SHOT_MIN_RANGE and dist < OGRE_SIGHT) then
+        FireShot(e, SK_SPEAR, DirVecX(e.facing), DirVecY(e.facing))
+        e.state = clock() + OGRE_FIRE_MS
+    end
+end
+
+// El bat vuela en diagonal y rebota; no persigue, molesta.
+func UpdateBat(e)
+    if (clock() >= e.nextAt) then
+        e.vx = (random(0, 1) * 2 - 1) * BAT_SPEED
+        e.vy = (random(0, 1) * 2 - 1) * BAT_SPEED
+        e.nextAt = clock() + random(300, BAT_TURN_MS)
+    end
+    if (MoveX(e, e.vx * dt, e.half)) then e.vx = -e.vx end
+    if (MoveY(e, e.vy * dt, e.half)) then e.vy = -e.vy end
+end
+
+// El jefe se mueve despacio de lado a lado y escupe tres bolas en
+// abanico. Su caja es de 28x28, asi que no cabe por los pasos: se
+// queda en su sala por construccion.
+func UpdateBoss(e)
+    if (clock() >= e.nextAt) then
+        e.vx = (random(0, 1) * 2 - 1) * BOSS_SPEED
+        e.vy = (random(0, 1) * 2 - 1) * BOSS_SPEED * 0.5
+        e.nextAt = clock() + random(900, 1800)
+    end
+    if (MoveX(e, e.vx * dt, e.half)) then e.vx = -e.vx end
+    if (MoveY(e, e.vy * dt, e.half)) then e.vy = -e.vy end
+
+    if (e.state > clock()) then return end
+    var dx = hero.x - e.x
+    var dy = hero.y - e.y
+    var n = abs(dx) + abs(dy)
+    if (n < SHOT_MIN_RANGE) then return end
+    var ux = dx / n
+    var uy = dy / n
+    FireShot(e, SK_FIRE, ux, uy)
+    FireShot(e, SK_FIRE, ux + 0.35, uy - 0.35)
+    FireShot(e, SK_FIRE, ux - 0.35, uy + 0.35)
+    e.state = clock() + BOSS_FIRE_MS
+    SfxBoss()
+end
+
+// Los enemigos no salen de su pantalla. Sin esto uno se mete en el hueco
+// de paso y recibe al heroe a bocajarro justo al entrar, sin sitio para
+// esquivar; ademas se perderia al cambiar de sala, porque solo viven los
+// de la pantalla actual. El original hace lo mismo: cada bicho es de su
+// pantalla y no cruza.
+func KeepInRoom(e)
+    var lo = RoomLeft() + e.half + 2
+    var hi = RoomLeft() + ROOM_W - e.half - 2
+    if (e.x < lo) then
+        e.x = lo
+        e.vx = abs(e.vx)
+        e.facing = DIR_RIGHT
+    elsif (e.x > hi) then
+        e.x = hi
+        e.vx = -abs(e.vx)
+        e.facing = DIR_LEFT
+    end
+
+    lo = RoomTop() + e.half + 2
+    hi = RoomTop() + ROOM_H - e.half - 2
+    if (e.y < lo) then
+        e.y = lo
+        e.vy = abs(e.vy)
+        e.facing = DIR_DOWN
+    elsif (e.y > hi) then
+        e.y = hi
+        e.vy = -abs(e.vy)
+        e.facing = DIR_UP
+    end
+end
+
+func EnemyDie(e)
+    e.alive = false
+    SfxKill()
+    if (e.kind == EK_BOSS) then
+        println("[boss] defeated")
+        bossDead = true
+        relicTaken = false
+        relicRoomCol = roomCol
+        relicRoomRow = roomRow
+        SpawnRelicHere()
+    else
+        // Casi siempre cae algo: el corazon es el premio gordo y la moneda
+        // el de consolacion. Antes 3 de cada 4 enemigos no soltaban nada y
+        // pelear no compensaba el riesgo que tiene.
+        var roll = random(0, 9)
+        if (roll < 2) then
+            SpawnItem(IT_HEART, e.x, e.y)
+        elsif (roll < 8) then
+            SpawnItem(IT_COIN, e.x, e.y)
+        end
+    end
+end
+
+func UpdateEnemies()
+    foreach (var e in enemies)
+        if (not e.alive) then continue end
+
+        if (e.kind == EK_SPITTER) then
+            UpdateSpitter(e)
+        elsif (e.kind == EK_HOPPER) then
+            UpdateHopper(e)
+        elsif (e.kind == EK_OGRE) then
+            UpdateOgre(e)
+        elsif (e.kind == EK_BAT) then
+            UpdateBat(e)
+        else
+            UpdateBoss(e)
+        end
+
+        KeepInRoom(e)
+
+        // La espada golpea; el cuerpo del enemigo hace dano al tocar.
+        if (HeroAttacking() and clock() >= e.hurtUntil) then
+            if (Overlap(SwordX(), SwordY(), SWORD_HALF, e.x, e.y, e.half)) then
+                e.hp--
+                e.hurtUntil = clock() + HURT_FLASH_MS
+                SfxHit()
+                if (e.hp <= 0) then
+                    EnemyDie(e)
+                    continue
+                end
+            end
+        end
+
+        if (Overlap(hero.x, hero.y, HERO_HALF, e.x, e.y, e.half)) then
+            HeroHurt(e.x, e.y)
+        end
+    end
+end
+
+func EnemiesAlive()
+    var n = 0
+    foreach (var e in enemies)
+        if (e.alive) then n++ end
+    end
+    return n
+end
+
+// =================================================================
+// Proyectiles y objetos
+// =================================================================
+func UpdateShots()
+    foreach (var s in shots)
+        if (not s.alive) then continue end
+        s.x = s.x + s.vx * dt
+        s.y = s.y + s.vy * dt
+
+        // Muere contra el decorado o al salirse de la pantalla actual.
+        if (BlocksMovement(CellAtPixel(s.x, s.y))) then
+            s.alive = false
+            continue
+        end
+        if (s.x < RoomLeft() or s.x > RoomLeft() + ROOM_W or
+            s.y < RoomTop() or s.y > RoomTop() + ROOM_H) then
+            s.alive = false
+            continue
+        end
+
+        // La espada desvia los proyectiles: premia atacar de frente.
+        if (HeroAttacking() and
+            Overlap(SwordX(), SwordY(), SWORD_HALF, s.x, s.y, SHOT_HALF)) then
+            s.alive = false
+            SfxHit()
+            continue
+        end
+
+        if (Overlap(hero.x, hero.y, HERO_HALF, s.x, s.y, SHOT_HALF)) then
+            s.alive = false
+            HeroHurt(s.x, s.y)
+        end
+    end
+end
+
+func UpdateItems()
+    foreach (var it in items)
+        if (not it.alive) then continue end
+        if (not Overlap(hero.x, hero.y, HERO_HALF, it.x, it.y, 7)) then continue end
+        it.alive = false
+        if (it.kind == IT_HEART) then
+            hero.hearts = Clamp(hero.hearts + 1, 0, hero.maxHearts)
+            SfxPickup()
+        elsif (it.kind == IT_KEY) then
+            hero.keys++
+            hasKey = true
+            SfxPickup()
+            println("[key] picked up")
+        elsif (it.kind == IT_COIN) then
+            hero.coins++
+            // Si estaba puesta en el mapa, anotarla para que no reaparezca.
+            var cx = int(it.x) div TILE
+            var cy = int(it.y) div TILE
+            if (cells.get(cx, cy) == SPAWN_COIN and not CoinTaken(cx, cy)) then
+                coinsTaken.append(cx)
+                coinsTaken.append(cy)
+            end
+            SfxPickup()
+        else
+            relicTaken = true
+            println("[victory] at ", clock(), " ms")
+            gameState = ST_WIN
+            wonAt = clock()
+            MusicPlay(MUSIC_WIN, false)
+        end
+    end
+end
+
+// =================================================================
+// Piloto automatico
+//
+// Dos capas, como jugaria una persona:
+//   1) Si hay enemigos cerca, se pelea: se va a por el mas proximo y
+//      se ataca cuando esta en el alcance del filo.
+//   2) Si no, se navega al objetivo de la partida. La navegacion NO es
+//      una ruta grabada sino un mapa de distancias (GridMap.dMap) que
+//      se reconstruye solo cuando cambia la celda objetivo; GridMap.dir
+//      devuelve cada frame hacia donde tirar. Una ruta grabada por
+//      posiciones se desincroniza en cuanto un enemigo se cruza, que es
+//      justo lo que pasa en un juego con enemigos aleatorios.
+// =================================================================
+func NavSetGoal(cx, cy)
+    if (cx == navGoalX and cy == navGoalY and navMap != nil) then return end
+
+    // Restaurar la marca anterior antes de poner la nueva: la celda
+    // objetivo se marca EN el mapa de celdas, que es el mismo que usa
+    // la colision, asi que no puede quedarse pintada.
+    if (navGoalX >= 0) then
+        cells.set(navGoalX, navGoalY, navSavedVal)
+    end
+    navGoalX = cx
+    navGoalY = cy
+    navSavedVal = cells.get(cx, cy)
+    cells.set(cx, cy, CELL_GOAL)
+    navMap = cells.dMap([CELL_GOAL],
+                        [CELL_FREE, CELL_CAVE, CELL_EXIT, CELL_GOAL,
+                         SPAWN_SPITTER, SPAWN_HOPPER, SPAWN_OGRE,
+                         SPAWN_BAT, SPAWN_BOSS, SPAWN_KEY, SPAWN_HEART])
+    cells.set(cx, cy, navSavedVal)
+    navGoalX = cx
+    navGoalY = cy
+    navSavedVal = cells.get(cx, cy)
+end
+
+// Busca en el mundo la primera celda con un valor dado. Solo se llama
+// al cambiar de objetivo, no por frame.
+func FindCell(value)
+    var w = worldCols * ROOM_COLS
+    var h = worldRows * ROOM_ROWS
+    for (var y = 0; y < h; y++)
+        for (var x = 0; x < w; x++)
+            if (cells.get(x, y) == value) then return [x, y] end
+        end
+    end
+    return nil
+end
+
+func NearestEnemy()
+    var best = nil
+    var bestD = 999999
+    foreach (var e in enemies)
+        if (not e.alive) then continue end
+        var d = abs(e.x - hero.x) + abs(e.y - hero.y)
+        if (d < bestD) then
+            bestD = d
+            best = e
+        end
+    end
+    return best
+end
+
+// Traduce el resultado de GridMap.dir (1=arriba 2=abajo 3=izq 4=der)
+// a la intencion del juego.
+func ApplyNavDir(d)
+    if (d == 1) then
+        intent.dy = -1
+    elsif (d == 2) then
+        intent.dy = 1
+    elsif (d == 3) then
+        intent.dx = -1
+    elsif (d == 4) then
+        intent.dx = 1
+    end
+end
+
+// Objetivo de la partida, cacheado por FASE. FindCell recorre el mundo
+// entero (hasta 4160 celdas); llamarlo cada frame no se nota en Windows
+// pero en la placa se comeria el frame entero. La fase solo cambia media
+// docena de veces por partida, asi que el escaneo tambien.
+func AiPhase()
+    if (world == WORLD_OVER) then return 0 end
+    if (bossDead) then return 4 end
+    if (doorOpen) then return 3 end
+    if (hasKey) then return 2 end
+    return 1
+end
+
+func AiTargetCell()
+    var phase = AiPhase()
+    if (phase == aiPhase) then return aiGoalCell end
+    aiPhase = phase
+
+    // Exterior: ir a la cueva. Mazmorra: llave -> puerta -> jefe.
+    if (phase == 0) then
+        aiGoalCell = FindCell(CELL_CAVE)
+    elsif (phase == 1) then
+        aiGoalCell = FindCell(SPAWN_KEY)
+    elsif (phase == 2) then
+        var d = FindCell(CELL_DOOR)
+        // Plantarse justo debajo de la puerta: la propia puerta es
+        // solida y el mapa de distancias no la atraviesa.
+        aiGoalCell = d == nil ? nil : [d[0], d[1] + 1]
+    elsif (phase == 3) then
+        aiGoalCell = FindCell(SPAWN_BOSS)
+    else
+        aiGoalCell = nil
+    end
+    return aiGoalCell
+end
+
+// Combate de golpear y retroceder, que es como se juega esto de verdad:
+// el cuerpo del enemigo hace dano al tocarlo, asi que empotrarse contra
+// el para pegarle sale carisimo. El piloto se alinea por el eje corto,
+// entra hasta el alcance del filo, golpea y se aparta mientras la espada
+// se recupera.
+func AiEngage(e)
+    var dx = e.x - hero.x
+    var dy = e.y - hero.y
+    var adx = abs(dx)
+    var ady = abs(dy)
+
+    // La espada solo pega en 4 direcciones, asi que todo el combate gira
+    // sobre un eje: se elige el del alejamiento mayor y no se cambia.
+    var alignX = adx > ady
+
+    // Las distancias se miden SOBRE EL EJE, no en Manhattan. El contacto
+    // que hace dano es por ejes (Overlap), asi que sumar los dos miente:
+    // contra el jefe, que ocupa 28x28, una suma de 26 se cumple con
+    // (18,8) -- que esta metido dentro de su cuerpo. El piloto se plantaba
+    // ahi creyendose a salvo y perdia un corazon cada 900 ms; era la razon
+    // de que llegase al jefe entero y se dejase la partida siempre en esa
+    // sala.
+    var far = alignX ? adx : ady
+    var reach = SWORD_REACH + SWORD_HALF + e.half
+    var safe = HERO_HALF + e.half + 6
+
+    // Encarar SIEMPRE al enemigo: en el frame del golpe no hay movimiento
+    // (se ataca y se sale de la funcion), asi que UpdateHero no reescribe
+    // este encaramiento y la espada sale hacia donde toca.
+    if (alignX) then
+        hero.facing = dx > 0 ? DIR_RIGHT : DIR_LEFT
+    else
+        hero.facing = dy > 0 ? DIR_DOWN : DIR_UP
+    end
+
+    var aligned = alignX ? ady <= 8 : adx <= 8
+
+    // Golpear en cuanto entra en el filo. Contra los perseguidores es lo
+    // unico que sale a cuenta: ir a buscarlos es regalarles el contacto,
+    // que hace el mismo dano que su arma. Se deja que vengan.
+    if (aligned and far <= reach and clock() >= aiAttackAt) then
+        intent.attack = true
+        aiAttackAt = clock() + ATTACK_COOLDOWN_MS
+        aiRetreatUntil = clock() + ATTACK_MS + 130
+        return
+    end
+
+    // Recien golpeado: apartarse por el mismo eje mientras el filo se
+    // recupera, en vez de quedarse pegado esperando el contacto.
+    if (clock() < aiRetreatUntil) then
+        var bx = alignX ? -Sign(dx) : 0
+        var by = alignX ? 0 : -Sign(dy)
+        if (StepStaysInRoom(bx, by)) then
+            intent.dx = bx
+            intent.dy = by
+        end
+        return
+    end
+
+    if (not aligned) then
+        if (alignX) then intent.dy = Sign(dy) else intent.dx = Sign(dx) end
+        return
+    end
+
+    if (far > reach) then
+        if (alignX) then intent.dx = Sign(dx) else intent.dy = Sign(dy) end
+    elsif (far < safe) then
+        var bx = alignX ? -Sign(dx) : 0
+        var by = alignX ? 0 : -Sign(dy)
+        if (StepStaysInRoom(bx, by)) then
+            intent.dx = bx
+            intent.dy = by
+        end
+    end
+end
+
+// El objeto de la sala que interesa recoger ahora mismo, o nil. La llave
+// y el trofeo siempre; los corazones solo si hay hueco, para no perder el
+// tiempo dando un rodeo por uno que no cura nada.
+const AI_COIN_RANGE = 70     // hasta donde merece la pena desviarse
+
+func WantedItem()
+    foreach (var it in items)
+        if (not it.alive) then continue end
+        if (it.kind == IT_KEY or it.kind == IT_RELIC) then return it end
+        if (it.kind == IT_HEART and hero.hearts < hero.maxHearts) then return it end
+        // La moneda es opcional: solo se va a por ella si cae de paso.
+        // Cruzar la sala entera por una es cambiar vida por nada.
+        if (it.kind == IT_COIN) then
+            if (abs(it.x - hero.x) + abs(it.y - hero.y) < AI_COIN_RANGE) then
+                return it
+            end
+        end
+    end
+    return nil
+end
+
+// Deambular cuando no hay nada que hacer (final de partida o objetivo
+// inalcanzable). Cambia de rumbo cada poco para no quedarse pegado.
+func AiWander()
+    if (clock() >= aiWanderUntil) then
+        aiWanderDir = RandomDir()
+        aiWanderUntil = clock() + random(500, 1400)
+    end
+    intent.dx = DirVecX(aiWanderDir)
+    intent.dy = DirVecY(aiWanderDir)
+end
+
+// Un paso de retirada o de esquiva no puede sacar al heroe de la
+// pantalla: si lo hace, el cambio de sala lo devuelve al frame siguiente
+// y el piloto se queda entrando y saliendo por la misma puerta para
+// siempre (pasaba justo en la sala de la cueva, con un spitter pegado al
+// paso oeste).
+func StepStaysInRoom(sx, sy)
+    var nx = hero.x + sx * 12
+    var ny = hero.y + sy * 12
+    if (nx < RoomLeft() + 5 or nx > RoomLeft() + ROOM_W - 5) then return false end
+    if (ny < RoomTop() + 5 or ny > RoomTop() + ROOM_H - 5) then return false end
+    return true
+end
+
+// A que lado apartarse. Elegir siempre el mismo (abajo, por ejemplo)
+// falla justo cuando importa: pegado a una pared la esquiva no mueve
+// nada y el disparo entra igual.
+func FreeSideY()
+    if (StepStaysInRoom(0, 1) and not BoxBlocked(hero.x, hero.y + 14, HERO_HALF)) then return 1 end
+    if (StepStaysInRoom(0, -1) and not BoxBlocked(hero.x, hero.y - 14, HERO_HALF)) then return -1 end
+    return 0
+end
+
+func FreeSideX()
+    if (StepStaysInRoom(1, 0) and not BoxBlocked(hero.x + 14, hero.y, HERO_HALF)) then return 1 end
+    if (StepStaysInRoom(-1, 0) and not BoxBlocked(hero.x - 14, hero.y, HERO_HALF)) then return -1 end
+    return 0
+end
+
+// Esquiva reactiva: si hay un proyectil viniendo de frente y cerca, se
+// aparta un paso perpendicular. Barato y se nota mucho al mirarlo.
+func AiDodge()
+    foreach (var s in shots)
+        if (not s.alive) then continue end
+        var dx = s.x - hero.x
+        var dy = s.y - hero.y
+        if (s.vx != 0 and abs(dx) < 54 and abs(dy) < 11 and Sign(s.vx) == -Sign(dx)) then
+            intent.dx = 0
+            intent.dy = FreeSideY()
+            return intent.dy != 0
+        end
+        if (s.vy != 0 and abs(dy) < 54 and abs(dx) < 11 and Sign(s.vy) == -Sign(dy)) then
+            intent.dy = 0
+            intent.dx = FreeSideX()
+            return intent.dx != 0
+        end
+    end
+    return false
+end
+
+func AutoPilot()
+    intent.dx = 0
+    intent.dy = 0
+    intent.attack = false
+
+    TryOpenDoor()
+
+    // 1) Reflejo: apartarse de un proyectil manda sobre todo lo demas.
+    if (AiDodge()) then return end
+
+    var e = NearestEnemy()
+    var ed = 99999
+    if (e != nil) then ed = abs(e.x - hero.x) + abs(e.y - hero.y) end
+
+    // 2) Un enemigo encima no se ignora ni por la llave. La llave la
+    //    guardan dos ogres: ir a por ella pisando a uno era la muerte
+    //    mas repetida del piloto.
+    if (e != nil and ed < 44) then
+        AiEngage(e)
+        return
+    end
+
+    // 3) Objetos sueltos. No son celdas del mapa, asi que no pasan por el
+    //    mapa de distancias: se va derecho a ellos. Y van antes que la
+    //    pelea a media distancia: coger y salir es lo que haria
+    //    cualquiera con dos guardianes lentos alrededor.
+    var want = WantedItem()
+    if (want != nil) then
+        intent.dx = abs(want.x - hero.x) > 3 ? Sign(want.x - hero.x) : 0
+        intent.dy = abs(want.y - hero.y) > 3 ? Sign(want.y - hero.y) : 0
+        return
+    end
+
+    // 4) Pelear solo con lo que estorba de verdad. Limpiar cada sala
+    //    sonaba bien, pero ninguna puerta exige matar a nadie: cruzar y
+    //    seguir sale mucho mas barato de vida.
+    if (e != nil) then
+        // Al ogre y al jefe se les planta cara aunque esten lejos:
+        // persiguen, asi que darles la espalda solo cambia donde te
+        // alcanzan. Al resto se le esquiva salvo que estorbe de verdad.
+        var chaser = e.kind == EK_OGRE or e.kind == EK_BOSS
+        if (ed < 64 or (chaser and ed < 120)) then
+            AiEngage(e)
+            return
+        end
+    end
+
+    var goal = AiTargetCell()
+    if (goal == nil) then
+        AiWander()
+        return
+    end
+    NavSetGoal(goal[0], goal[1])
+    if (navMap == nil) then
+        AiWander()
+        return
+    end
+    var d = navMap.dir(int(hero.x) div TILE, int(hero.y) div TILE)
+    if (d == 0) then
+        AiWander()
+        return
+    end
+    ApplyNavDir(d)
+end
+
+// =================================================================
+// Entrada
+// =================================================================
+func ReadInput()
+    intent.dx = 0
+    intent.dy = 0
+    intent.attack = false
+    var touched = false
+
+    if (Input.pressed(ACTION.LEFT)) then
+        intent.dx = -1
+        touched = true
+    elsif (Input.pressed(ACTION.RIGHT)) then
+        intent.dx = 1
+        touched = true
+    end
+    if (Input.pressed(ACTION.UP)) then
+        intent.dy = -1
+        touched = true
+    elsif (Input.pressed(ACTION.DOWN)) then
+        intent.dy = 1
+        touched = true
+    end
+    if (Input.justPressed(ACTION.ATTACK)) then
+        intent.attack = true
+        touched = true
+    end
+    if (touched) then
+        lastHumanAt = clock()
+        autoPlay = false
+    end
+    return touched
+end
+
+// El piloto toma el mando cuando no hay botones o cuando nadie toca
+// nada durante ATTRACT_MS. Es el comportamiento de una recreativa: la
+// maquina se juega sola hasta que alguien se acerca.
+func UpdateControl()
+    if (not hasInput) then
+        autoPlay = true
+        AutoPilot()
+        return
+    end
+    // Input.update() lo hace el bucle principal, UNA vez por frame.
+    // Llamarlo aqui otra vez copiaria el estado actual sobre el anterior
+    // y justPressed no volveria a ser cierto nunca: el boton de atacar
+    // dejaria de responder.
+    ReadInput()
+    if (not autoPlay and clock() - lastHumanAt > ATTRACT_MS) then
+        autoPlay = true
+    end
+    if (autoPlay) then
+        AutoPilot()
+    else
+        TryOpenDoor()
+    end
+end
+
+// =================================================================
+// Sonido
+// =================================================================
+func SfxSword()
+    if (not soundOk) then return end
+    Sound.tone(SFX_CH, 900, SFXV_SWORD, WAVE_SQUARE, 60, SFX_PRIO)
+    Sound.slideFreq(SFX_CH, 1500, 60)
+end
+
+func SfxCut()
+    if (not soundOk) then return end
+    Sound.noise(SFXV_CUT, 40, 0, 70, SFX_PRIO)
+end
+
+func SfxHit()
+    if (not soundOk) then return end
+    Sound.tone(SFX_CH, 320, SFXV_HIT, WAVE_SQUARE, 70, SFX_PRIO)
+    Sound.slideFreq(SFX_CH, 140, 70)
+end
+
+func SfxKill()
+    if (not soundOk) then return end
+    Sound.noise(SFXV_KILL, 22, 0, 140, SFX_PRIO)
+end
+
+func SfxShot()
+    if (not soundOk) then return end
+    Sound.tone(SFX_CH, 620, SFXV_SHOT, WAVE_SQUARE, 50, SFX_PRIO)
+end
+
+func SfxHurt()
+    if (not soundOk) then return end
+    Sound.tone(SFX_CH, 220, SFXV_HURT, WAVE_SQUARE, 220, SFX_PRIO)
+    Sound.slideFreq(SFX_CH, 90, 220)
+end
+
+func SfxPickup()
+    if (not soundOk) then return end
+    Sound.tone(SFX_CH, 880, SFXV_PICKUP, WAVE_SQUARE, 70, SFX_PRIO)
+    Sound.slideFreq(SFX_CH, 1320, 70)
+end
+
+func SfxDoor()
+    if (not soundOk) then return end
+    Sound.tone(SFX_CH, 180, SFXV_DOOR, WAVE_SQUARE, 260, SFX_PRIO)
+    Sound.slideFreq(SFX_CH, 520, 260)
+end
+
+func SfxBoss()
+    if (not soundOk) then return end
+    Sound.tone(SFX_CH, 150, SFXV_BOSS, WAVE_SQUARE, 260, SFX_PRIO)
+    Sound.slideFreq(SFX_CH, 70, 260)
+end
+
+// El motor secuencia la musica: aqui solo se carga y se lanza.
+//
+// Antes esto era un secuenciador escrito en JARU que repartia notas desde el
+// bucle del juego. Sonaba, pero el tempo quedaba atado al frame rate: en
+// placa, a 25-30 fps, el error por nota (~35 ms) es casi tan grande como una
+// nota del arpegio (42 ms) y el arreglo se deshace. El reproductor de .jmu
+// corre en la tarea de audio con su propio reloj, y ademas da envolventes
+// ADSR por instrumento, que por codigo no habia.
+//
+// Las canciones se escriben en Tools/songs.py, se generan como Music/*.jms
+// y las compila a .jmu el Build del IDE.
+func MusicPlay(path, loop)
+    if (not soundOk) then return false end
+
+    // Solo cabe una cancion cargada, asi que cambiar de tema es descargar y
+    // releer de flash. Es una lectura por transicion (titulo, partida,
+    // muerte, victoria), no por frame.
+    if (musCurrent == path and Sound.isMusicPlaying()) then return true end
+
+    Sound.stopMusic()
+    Sound.unloadMusic()
+    musCurrent = ""
+
+    if (not Sound.loadMusic(path)) then
+        // Sin musica se sigue jugando: el .jmu solo existe despues de un
+        // Build del IDE, y por linea de comandos no esta.
+        println(">>> music not found: ", path)
+        return false
+    end
+    if (not Sound.playMusic(loop)) then
+        Sound.unloadMusic()
+        return false
+    end
+
+    // Despues de playMusic, no antes: arrancar una cancion restaura el
+    // volumen al de su cabecera y se llevaria por delante este ajuste.
+    Sound.setMusicVolume(MUSIC_VOLUME)
+    musCurrent = path
+    return true
+end
+
+// =================================================================
+// Dibujado
+// =================================================================
+func PutSprite(spr, wx, wy, frame, flip)
+    spr.frame = frame
+    spr.flipX = flip
+    spr.x = wx - 8 - camX
+    spr.y = wy - 8 - camY
+    draw.sprite(spr)
+end
+
+func DrawHero()
+    // Invulnerable: parpadea saltandose un frame de cada dos.
+    if (clock() < hero.invulnUntil and (clock() div 70) % 2 == 0) then return end
+
+    var frame = WALK_CYCLE[int(hero.walkPhase / WALK_STEP) % 4]
+    if (hero.facing == DIR_DOWN) then
+        PutSprite(sprHeroDown, hero.x, hero.y, frame, false)
+    elsif (hero.facing == DIR_UP) then
+        PutSprite(sprHeroUp, hero.x, hero.y, frame, false)
+    else
+        PutSprite(sprHeroSide, hero.x, hero.y, frame, hero.facing == DIR_LEFT)
+    end
+
+    if (HeroAttacking()) then
+        if (hero.facing == DIR_DOWN) then
+            PutSprite(sprSwordDown, SwordX(), SwordY(), 0, false)
+        elsif (hero.facing == DIR_UP) then
+            PutSprite(sprSwordUp, SwordX(), SwordY(), 0, false)
+        else
+            PutSprite(sprSwordSide, SwordX(), SwordY(), 0,
+                      hero.facing == DIR_LEFT)
+        end
+    end
+end
+
+func DrawEnemies()
+    foreach (var e in enemies)
+        if (not e.alive) then continue end
+        // Al ser golpeado parpadea: sin eso no se sabe si el golpe entro.
+        if (clock() < e.hurtUntil and (clock() div 40) % 2 == 0) then continue end
+        var spr = EnemySprite(e)
+        var frame = (clock() div 190) % 2
+        var flip = e.facing == DIR_LEFT
+        if (e.kind == EK_BOSS) then
+            spr.frame = frame
+            spr.x = e.x - 16 - camX
+            spr.y = e.y - 16 - camY
+            draw.sprite(spr)
+        else
+            PutSprite(spr, e.x, e.y, frame, flip)
+        end
+    end
+end
+
+func DrawShots()
+    foreach (var s in shots)
+        if (not s.alive) then continue end
+        var spr = sprShotRock
+        if (s.kind == SK_SPEAR) then
+            spr = sprShotSpear
+        elsif (s.kind == SK_FIRE) then
+            spr = sprShotFire
+        end
+        PutSprite(spr, s.x, s.y, 0, s.vx < 0)
+    end
+end
+
+func DrawItems()
+    foreach (var it in items)
+        if (not it.alive) then continue end
+        var spr = sprHeart
+        if (it.kind == IT_KEY) then
+            spr = sprKey
+        elsif (it.kind == IT_COIN) then
+            spr = sprCoin
+        elsif (it.kind == IT_RELIC) then
+            spr = sprRelic
+        end
+        PutSprite(spr, it.x, it.y, 0, false)
+    end
+end
+
+// El HUD se dibuja DESPUES de la escena y tapa la franja de 32 px de
+// arriba, que es justo donde el renderizador de tiles deja asomar la
+// fila de la pantalla anterior.
+func DrawHud()
+    draw.color = 0x000000
+    draw.rect(0, 0, SCREEN_W, HUD_H, true)
+
+    var i = 0
+    while (i < hero.hearts)
+        sprHeart.frame = 0
+        sprHeart.flipX = false
+        sprHeart.x = 6 + i * 14
+        sprHeart.y = 8
+        draw.sprite(sprHeart)
+        i++
+    end
+
+    sprCoin.frame = 0
+    sprCoin.flipX = false
+    sprCoin.x = 108
+    sprCoin.y = 8
+    draw.sprite(sprCoin)
+    draw.text(126, 12, hero.coins.toString(), 0xFFD700)
+
+    if (hero.keys > 0) then
+        sprKey.frame = 0
+        sprKey.x = 166
+        sprKey.y = 8
+        draw.sprite(sprKey)
+    end
+
+    var label = world == WORLD_OVER ? "OVERWORLD" : "DUNGEON"
+    draw.text(196, 12, label, 0xFFFFFF)
+end
+
+// La portada se carga al entrar aqui y se suelta en NewGame(): son 150 KB,
+// mas que todo el resto del juego junto, y no tienen por que estar vivos
+// mientras se juega.
+//
+// Se repinta cada frame en vez de pintarla UNA vez y confiar en que el
+// buffer la conserve. Esa optimizacion parece obvia y solo funciona en una
+// de las tres plataformas: en ESP32 el backbuffer es un unico sprite que
+// solo se limpia si autoClear esta activo (MDisplay.cpp:757) y si
+// aguantaria, pero en el P4 tft.swapBuffers() es doble buffer de verdad
+// (se veria un frame si y otro no) y en Windows SDL_RenderPresent no
+// garantiza el contenido despues de presentar. Repintar cuesta un blit en
+// una pantalla que no hace nada mas.
+// Centra un texto. La fuente por defecto mide 6 px por caracter, asi que
+// media cadena son 3 px por letra. A ojo funcionaba hasta que cambiaba una
+// palabra y se descuadraba sin que nadie lo notase.
+func TextCentered(y, text, color)
+    draw.text(SCREEN_W / 2 - text.size() * 3, y, text, color)
+end
+
+func DrawTitle()
+    if (coverBmp == nil) then coverBmp = Bitmap.load("Images/Cover.bmp") end
+
+    if (coverBmp != nil) then
+        // Opaco a proposito: la portada no tiene color transparente y con
+        // draw.bitmap el negro del cielo se comeria como si lo fuera.
+        draw.bitmapOpaque(0, 0, coverBmp)
+    else
+        draw.color = 0x000000
+        draw.rect(0, 0, SCREEN_W, SCREEN_H, true)
+        TextCentered(100, "JARU QUEST", 0xFFFFFF)
+    end
+
+    if ((clock() div 500) % 2 == 0) then
+        if (hasInput) then
+            TextCentered(220, "PRESS ENTER", 0xFFFFFF)
+        else
+            TextCentered(220, "DEMO", 0xFFFFFF)
+        end
+    end
+end
+
+func DrawGameOver()
+    draw.color = 0x000000
+    draw.rect(0, 0, SCREEN_W, SCREEN_H, true)
+    TextCentered(110, "GAME OVER", 0xFF2020)
+end
+
+func DrawWin()
+    draw.color = 0x000000
+    draw.rect(0, 0, SCREEN_W, SCREEN_H, true)
+    TextCentered(96, "VICTORY", 0xFFD700)
+    sprRelic.frame = 0
+    sprRelic.x = SCREEN_W / 2 - 8
+    sprRelic.y = 124
+    draw.sprite(sprRelic)
+end
+
+func DrawWorld()
+    scene.setCamera(camX, camY)
+    draw.scene(scene)
+    DrawItems()
+    DrawEnemies()
+    DrawShots()
+    DrawHero()
+    DrawHud()
+end
+
+// =================================================================
+// Partida
+// =================================================================
+func EnterTitle(now)
+    gameState = ST_TITLE
+    titleAt = now
+    MusicPlay(MUSIC_TITLE, true)
+end
+
+func NewGame()
+    // Soltar la portada antes de cargar los mundos: son los dos picos de
+    // memoria del juego y no tienen por que coincidir.
+    coverBmp = nil
+
+    hero.hearts = HERO_START_HEARTS
+    hero.maxHearts = HERO_MAX_HEARTS
+    hero.keys = 0
+    hero.coins = 0
+    coinsTaken = []
+    hero.walkPhase = 0.0
+    hasKey = false
+    bossDead = false
+    doorOpen = false
+    relicTaken = false
+    relicRoomCol = -1
+    relicRoomRow = -1
+
+    // Las puertas y arbustos cortados de la partida anterior siguen
+    // abiertos en la rejilla, asi que se recargan los dos mundos.
+    LoadWorlds()
+    HeroReset(WORLD_OVER, 0, 3, 9, 8)
+    gameState = ST_PLAY
+    MusicPlay(MUSIC_FIELD, true)
+end
+
+func UpdateTransition()
+    var left = transitionUntil - clock()
+    if (left <= 0) then
+        camX = camToX
+        camY = camToY
+        gameState = ST_PLAY
+        return
+    end
+    // float() explicito: los dos operandos son enteros y una division
+    // entera dejaria t en 0 o 1, o sea un salto seco en vez del
+    // deslizamiento.
+    var t = 1.0 - float(left) / TRANSITION_MS
+    camX = camFromX + (camToX - camFromX) * t
+    camY = camFromY + (camToY - camFromY) * t
+end
+
+// =================================================================
+// Main
+// =================================================================
+println("JaruQuest - mem: ", memUse(), " free: ", memFree())
+
+randomize(clock())
+InitScreen()
+InitSound()
+SetupInput()
+LoadSprites()
+
+hero = Hero()
+intent = Intent()
+InitPools()
+LoadWorlds()
+UseWorld(WORLD_OVER)
+
+lastTick = clock()
+fpsAt = clock()
+lastHumanAt = clock()
+autoPlay = not hasInput
+
+EnterTitle(clock())
+
+while (true)
+    var now = clock()
+    dt = (now - lastTick) / 1000.0
+    // Un frame largo (carga, GC, ventana movida) no puede teletransportar
+    // a nadie a traves de una pared: se corta el paso maximo.
+    if (dt > 0.05) then dt = 0.05 end
+    if (dt < 0.0) then dt = 0.0 end
+    lastTick = now
+    frames++
+
+    if (hasInput) then Input.update() end
+
+    if (gameState == ST_TITLE) then
+        DrawTitle()
+        // Como una recreativa: si nadie pulsa, el titulo da paso a la
+        // demo; pulsar START entra directo con el mando en la mano.
+        if (hasInput and Input.justPressed(ACTION.START)) then
+            NewGame()
+            autoPlay = false
+            lastHumanAt = now
+        elsif (now - titleAt > TITLE_DEMO_MS) then
+            NewGame()
+            autoPlay = true
+        end
+
+    elsif (gameState == ST_TRANSITION) then
+        UpdateTransition()
+        DrawWorld()
+
+    elsif (gameState == ST_PLAY) then
+        UpdateControl()
+        UpdateHero()
+        UpdateEnemies()
+        UpdateShots()
+        UpdateItems()
+        if (gameState == ST_PLAY) then CheckRoomChange() end
+        DrawWorld()
+
+    elsif (gameState == ST_GAMEOVER) then
+        DrawGameOver()
+        if (now >= gameOverUntil) then NewGame() end
+
+    else
+        DrawWin()
+        // La espera se ajusta a lo que dura la fanfarria (~8 s, ver
+        // Tools/songs.py) para no cortarla a la mitad.
+        if (now - wonAt > 8400) then EnterTitle(now) end
+    end
+
+    Display.update()
+
+    if (now - fpsAt >= 1000) then
+        println("FPS: ", frames, " room=", roomCol, ",", roomRow,
+                " hearts=", hero.hearts, " coins=", hero.coins, " keys=", hero.keys,
+                " foes=", EnemiesAlive(), " phase=", aiPhase,
+                " goal=", aiGoalCell == nil ? "-" : aiGoalCell[0].toString() + "," + aiGoalCell[1].toString(),
+                " pos=", int(hero.x) div TILE, ",", int(hero.y) div TILE,
+                " mem=", memFree())
+        frames = 0
+        fpsAt = now
+    end
+
+    if (platform() == HW_WIN32) then pause(8) end
+end

@@ -1,0 +1,455 @@
+// =================================================================
+// JaruMoves - Construccion de las fases
+//
+// Las cuatro fases comparten un unico modelo de escenario: dos
+// arrays de una entrada por columna de 8 px.
+//
+//   surfY[c]  Y de la superficie solida (suelo, cubierta del puente,
+//             lecho del rio). NO_GROUND = vacio (hueco, agua abierta).
+//   overY[c]  Y de la plataforma superior atravesable desde abajo
+//             (piso alto del puente, troncos y rocas de la jungla).
+//             NO_GROUND = no hay.
+//
+// Con eso valen tanto el puente con huecos como el perfil de colinas
+// que el helicoptero no puede tocar o el lecho del rio.
+//
+// Las oleadas son una lista ordenada de [pxDisparo, tipo, y] y los
+// objetos recogibles otra igual. El nivel se recorre por scrollX, asi
+// que basta comparar contra el primer elemento pendiente.
+// =================================================================
+
+const TOTAL_PHASES = 4
+
+const PH_BRIDGE = 1     // Fase 1: el jeep sobre el puente
+const PH_HELI   = 2     // Fase 2: el helicoptero
+const PH_RIVER  = 3     // Fase 3: el rio a nado
+const PH_JUNGLE = 4     // Fase 4: la jungla y el cuartel enemigo
+
+
+const TCOL = 8          // ancho de columna del escenario en px
+const PLAY_TOP = 0      // primera fila del campo de juego
+const PLAY_BOT = 214    // ultima fila (debajo va el panel)
+const HUD_Y = 214
+const HUD_H = 26
+
+const NO_GROUND = 9999
+
+// Geometria de la fase 1
+const DECK_LOW  = 160   // cubierta baja del puente
+const DECK_HIGH = 120   // pasarela alta
+
+// Alturas de pasada de los helicopteros de la fase 1. El canon del jeep
+// tira en horizontal a la altura DECK_LOW - 13, asi que la baja se barre
+// desde la cubierta y la alta obliga a saltar. Se alternan para que la fase
+// no sea siempre el mismo gesto.
+const CHOP_LOW  = 138
+const CHOP_HIGH = 114
+const WATER_Y   = 192   // lamina de agua bajo el puente (multiplo de 8: cae
+                        // en frontera de tile)
+
+// Geometria de la fase 3
+const RIVER_TOP = 40    // superficie del rio (multiplo de 8)
+
+// Tipos de enemigo
+const FK_CHOPPER = 0    // helicoptero enemigo (fases 1 y 2)
+const FK_JEEP    = 1    // jeep enemigo sobre la cubierta
+const FK_PLANE   = 2    // caza rasante (fase 2)
+const FK_AA      = 3    // bateria antiaerea anclada al suelo
+const FK_MINE    = 4    // mina fondeada (fase 3)
+const FK_FISH    = 5    // torpedo humano (fase 3)
+const FK_SOLDIER = 6    // soldado a pie (fase 4)
+const FK_MORTAR  = 7    // nido de mortero atrincherado (fase 4)
+
+// Objetos recogibles
+const PK_AMMO  = 0      // caja de municion: +score
+const PK_MEDAL = 1      // botiquin: +1 de energia
+
+// ---------------- Datos de la fase en curso ----------------
+var surfY = []
+var overY = []
+var phaseCols = 0
+var phaseEndPx = 0      // scrollX (o worldX del heroe) que cierra la fase
+var waves = []
+var drops = []
+
+// Paleta de la fase
+var colSky1 = 0x102848
+var colSky2 = 0x1C4470
+var colSky3 = 0x2C6098
+var colSky4 = 0x4C88C0
+var colFar  = 0x243C58
+var colNear = 0x1A2C40
+var colWater = 0x184C70
+
+// Perfil de la sierra del fondo: 24 alturas que se repiten.
+const FAR_N = 24
+var farH[FAR_N]
+
+func BuildFarRidge(base, amp)
+    var h = base
+    for (var i = 0;i < FAR_N;i++)
+        h += random(0, amp * 2) - amp
+        if (h < base - amp * 2) then h = base - amp * 2 end
+        if (h > base + amp * 2) then h = base + amp * 2 end
+        farH[i] = h
+    end
+end
+
+// ---------------- Acceso al escenario ----------------
+func SurfAt(c)
+    if (c < 0) then return surfY[0] end
+    if (c >= phaseCols) then return surfY[phaseCols - 1] end
+    return surfY[c]
+end
+
+func OverAt(c)
+    if (c < 0) then return NO_GROUND end
+    if (c >= phaseCols) then return NO_GROUND end
+    return overY[c]
+end
+
+// Superficie solida bajo una X del mundo (en px)
+func SurfAtPx(wx)
+    return SurfAt(int(wx) div TCOL)
+end
+
+func OverAtPx(wx)
+    return OverAt(int(wx) div TCOL)
+end
+
+// ---------------- Oleadas ----------------
+func AddWave(trigPx, kind, y)
+    waves.append([trigPx, kind, y])
+end
+
+func AddDrop(trigPx, kind, y)
+    drops.append([trigPx, kind, y])
+end
+
+func SortPairs(lst)
+    for (var i = 0;i < lst.size() - 1;i++)
+        for (var j = 0;j < lst.size() - 1 - i;j++)
+            if (lst[j][0] > lst[j + 1][0]) then
+                var tmp = lst[j]
+                lst[j] = lst[j + 1]
+                lst[j + 1] = tmp
+            end
+        end
+    end
+end
+
+// =================================================================
+// Fase 1 - El puente
+//
+// Cubierta baja continua rota por huecos de 2 a 4 columnas (16-32 px,
+// siempre por debajo de los 52 px que alcanza el salto del jeep) y
+// pasarelas altas sobre los tramos largos. La pasarela nunca llega a
+// menos de cinco columnas de un hueco: asi el jeep que baja de ella
+// siempre cae sobre suelo firme.
+// =================================================================
+func BuildBridge()
+    phaseCols = 460
+    phaseEndPx = (phaseCols - 42) * TCOL
+
+    colSky1 = 0x101C3C
+    colSky2 = 0x1C3868
+    colSky3 = 0x2C5C94
+    colSky4 = 0x5484B4
+    colFar  = 0x203450
+    colNear = 0x162438
+    colWater = 0x184C70
+    BuildFarRidge(150, 5)
+
+    surfY = []
+    overY = []
+    waves = []
+    drops = []
+
+    // --- cubierta baja: tramos solidos separados por huecos ---
+    var c = 0
+    var run = 26            // arranque solido y largo
+    var gap = 0
+    while (c < phaseCols)
+        if (c >= phaseCols - 30) then
+            surfY.append(DECK_LOW)      // final solido
+        elsif (run > 0) then
+            surfY.append(DECK_LOW)
+            run--
+            if (run == 0) then gap = random(2, 4) end
+        else
+            surfY.append(NO_GROUND)
+            gap--
+            if (gap <= 0) then run = random(12, 24) end
+        end
+        overY.append(NO_GROUND)
+        c++
+    end
+
+    // --- pasarelas altas sobre los tramos largos ---
+    var runStart = 0
+    for (c = 1;c <= phaseCols;c++)
+        var solid = c < phaseCols and surfY[c] != NO_GROUND
+        var wasSolid = surfY[c - 1] != NO_GROUND
+        if (wasSolid and not solid) then
+            var runLen = c - runStart
+            if (runLen >= 24) then
+                var from = runStart + 5
+                var span = runLen - 10
+                if (span > 14) then span = 14 end
+                for (var k = from;k < from + span;k++)
+                    overY[k] = DECK_HIGH
+                end
+                // un botiquin en mitad de la pasarela
+                AddDrop((from + span / 2) * TCOL, PK_MEDAL, DECK_HIGH - 10)
+            end
+        end
+        if (not wasSolid and solid) then runStart = c end
+    end
+
+    // --- oleadas ---
+    var px = 340
+    var n = 0
+    while (px < phaseEndPx - 200)
+        if (n mod 3 == 0) then
+            AddWave(px, FK_JEEP, 0)
+        else
+            // La y de la oleada es la ALTURA DE PASADA a la que baja el
+            // helicoptero, no donde aparece: entra por arriba y desciende.
+            AddWave(px, FK_CHOPPER, n mod 2 == 0 ? CHOP_LOW : CHOP_HIGH)
+        end
+        if (n mod 4 == 3) then
+            AddWave(px + 60, FK_CHOPPER, CHOP_HIGH)
+            AddDrop(px + 120, PK_AMMO, DECK_LOW - 12)
+        end
+        px += random(230, 330)
+        n++
+    end
+
+    SortPairs(waves)
+    SortPairs(drops)
+end
+
+// =================================================================
+// Fase 2 - El helicoptero
+//
+// Aqui el escenario es solo silueta: tocar la copa de los arboles o
+// salirse por arriba mata. No hay plataformas.
+// =================================================================
+func BuildHeli()
+    phaseCols = 440
+    phaseEndPx = (phaseCols - 42) * TCOL
+
+    colSky1 = 0x2C1830
+    colSky2 = 0x5C2438
+    colSky3 = 0x9C4438
+    colSky4 = 0xD08048
+    colFar  = 0x40202C
+    colNear = 0x281820
+    colWater = 0x184C70
+    BuildFarRidge(140, 7)
+
+    surfY = []
+    overY = []
+    waves = []
+    drops = []
+
+    var h = 178
+    for (var c = 0;c < phaseCols;c++)
+        if (c > 14 and c < phaseCols - 20) then
+            h += random(0, 8) - 4
+            if (h < 138) then h = 138 end
+            if (h > 198) then h = 198 end
+        else
+            if (h < 178) then h += 2 end
+            if (h > 178) then h -= 2 end
+        end
+        surfY.append(h)
+        overY.append(NO_GROUND)
+    end
+
+    var px = 300
+    var n = 0
+    while (px < phaseEndPx - 200)
+        switch (n mod 4)
+            case 0 :
+                AddWave(px, FK_PLANE, random(30, 90))
+            case 1 :
+                AddWave(px, FK_AA, 0)
+                AddWave(px + 90, FK_CHOPPER, random(40, 100))
+            case 2 :
+                AddWave(px, FK_CHOPPER, random(26, 60))
+                AddWave(px + 70, FK_CHOPPER, random(70, 110))
+            default :
+                AddWave(px, FK_PLANE, random(40, 100))
+                AddWave(px + 50, FK_AA, 0)
+                AddDrop(px + 140, PK_AMMO, random(60, 120))
+        end
+        px += random(210, 290)
+        n++
+    end
+
+    SortPairs(waves)
+    SortPairs(drops)
+end
+
+// =================================================================
+// Fase 3 - El rio
+//
+// El buzo nada entre la superficie y el lecho. Las minas estan
+// fondeadas (no se mueven con el scroll mas que por el propio
+// desplazamiento) y los torpedos humanos persiguen en vertical.
+// =================================================================
+func BuildRiver()
+    phaseCols = 360
+    phaseEndPx = (phaseCols - 42) * TCOL
+
+    colSky1 = 0x0C2038
+    colSky2 = 0x14304C
+    colSky3 = 0x1C4468
+    colSky4 = 0x286084
+    colFar  = 0x18303C
+    colNear = 0x102028
+    colWater = 0x14506C
+    BuildFarRidge(120, 6)
+
+    surfY = []
+    overY = []
+    waves = []
+    drops = []
+
+    var h = 196
+    for (var c = 0;c < phaseCols;c++)
+        if (c > 12 and c < phaseCols - 18) then
+            h += random(0, 6) - 3
+            if (h < 182) then h = 182 end
+            if (h > 206) then h = 206 end
+        else
+            if (h < 196) then h += 2 end
+            if (h > 196) then h -= 2 end
+        end
+        surfY.append(h)
+        overY.append(NO_GROUND)
+    end
+
+    var px = 260
+    var n = 0
+    while (px < phaseEndPx - 160)
+        AddWave(px, FK_MINE, random(RIVER_TOP + 24, 168))
+        if (n mod 2 == 1) then
+            AddWave(px + 60, FK_MINE, random(RIVER_TOP + 20, 160))
+        end
+        if (n mod 3 == 2) then
+            AddWave(px + 100, FK_FISH, random(RIVER_TOP + 30, 160))
+        end
+        if (n mod 5 == 4) then
+            AddDrop(px + 130, PK_MEDAL, random(RIVER_TOP + 30, 150))
+        end
+        px += random(150, 210)
+        n++
+    end
+
+    SortPairs(waves)
+    SortPairs(drops)
+end
+
+// =================================================================
+// Fase 4 - La jungla y el cuartel
+//
+// Suelo plano a una sola altura con fosos de 3 a 5 columnas (24-40 px,
+// contra los ~56 px que salta el soldado) y troncos suspendidos. Las
+// ultimas columnas son explanada: ahi se levanta el cuartel.
+// =================================================================
+const JUNGLE_GROUND = 176
+
+func BuildJungle()
+    phaseCols = 420
+    phaseEndPx = (phaseCols - 16) * TCOL
+
+    colSky1 = 0x1C3C18
+    colSky2 = 0x2C5824
+    colSky3 = 0x54843C
+    colSky4 = 0x88B060
+    colFar  = 0x1C4020
+    colNear = 0x122C16
+    colWater = 0x2C2C18
+    BuildFarRidge(146, 6)
+
+    surfY = []
+    overY = []
+    waves = []
+    drops = []
+
+    var c = 0
+    var run = 22
+    var gap = 0
+    while (c < phaseCols)
+        if (c >= phaseCols - 34) then
+            surfY.append(JUNGLE_GROUND)
+        elsif (run > 0) then
+            surfY.append(JUNGLE_GROUND)
+            run--
+            if (run == 0) then gap = random(3, 5) end
+        else
+            surfY.append(NO_GROUND)
+            gap--
+            if (gap <= 0) then run = random(10, 20) end
+        end
+        overY.append(NO_GROUND)
+        c++
+    end
+
+    // troncos: plataformas cortas sobre los tramos largos
+    var runStart = 0
+    for (c = 1;c <= phaseCols;c++)
+        var solid = c < phaseCols and surfY[c] != NO_GROUND
+        var wasSolid = surfY[c - 1] != NO_GROUND
+        if (wasSolid and not solid) then
+            var runLen = c - runStart
+            // El tronco arranca siete columnas despues del borde: el
+            // soldado que acaba de saltar el foso cae unos 24 px dentro
+            // del tramo y no debe quedarse subido encima.
+            if (runLen >= 16) then
+                var from = runStart + 7
+                var span = runLen - 12
+                if (span > 8) then span = 8 end
+                for (var k = from;k < from + span;k++)
+                    overY[k] = JUNGLE_GROUND - 48
+                end
+                AddDrop((from + span / 2) * TCOL, PK_AMMO, JUNGLE_GROUND - 60)
+            end
+        end
+        if (not wasSolid and solid) then runStart = c end
+    end
+
+    var px = 300
+    var n = 0
+    while (px < phaseEndPx - 260)
+        if (n mod 3 == 2) then
+            AddWave(px, FK_MORTAR, 0)
+        else
+            AddWave(px, FK_SOLDIER, 0)
+        end
+        if (n mod 4 == 1) then
+            AddWave(px + 90, FK_SOLDIER, 0)
+            AddDrop(px + 150, PK_MEDAL, JUNGLE_GROUND - 12)
+        end
+        px += random(190, 260)
+        n++
+    end
+
+    SortPairs(waves)
+    SortPairs(drops)
+end
+
+func BuildPhase(n)
+    switch (n)
+        case PH_BRIDGE :
+            BuildBridge()
+        case PH_HELI :
+            BuildHeli()
+        case PH_RIVER :
+            BuildRiver()
+        default :
+            BuildJungle()
+    end
+end

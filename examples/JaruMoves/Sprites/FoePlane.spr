@@ -1,0 +1,1 @@
+{"version": 1, "imageNodeID": 15, "imageRelativePath": "Images\\spr_FoePlane.bmp", "animation": {"fps": 1, "alignment": 0, "isTransparent": true, "backgroundColor": 16711935, "gridWidth": 32, "gridHeight": 16}, "regions": [{"x": 0, "y": 0, "width": 32, "height": 16}]}

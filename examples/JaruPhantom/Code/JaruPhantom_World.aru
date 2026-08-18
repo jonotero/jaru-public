@@ -1,0 +1,103 @@
+// Generado por Tools/build_rooms.py -- no editar a mano.
+//
+// Cada habitacion es una pantalla fija de 40x24 celdas de 8 px.
+// Los vecinos van en WORLD_LINK_*; -1 significa que por ese borde no se
+// sale y el jugador se queda pegado a la pared.
+
+const ROOM_COLS = 40
+const ROOM_ROWS = 24
+const WORLD_ROOMS = 8
+
+const WORLD_NAME = ["The Rooftop", "The Pillars", "The Chimney", "The Spike Hall", "The Girders", "The Overhang", "The Towers", "The Crypt"]
+const WORLD_MAP = ["Room_00", "Room_01", "Room_02", "Room_03", "Room_04", "Room_05", "Room_06", "Room_07"]
+const WORLD_TILESET = ["Mansion", "Mansion", "Mansion", "Cavernas", "Cavernas", "Cavernas", "Criptas", "Criptas"]
+
+// Donde empieza la partida, y donde se aparece al llegar SUBIENDO desde
+// la planta de abajo: de pie al lado del hueco, nunca dentro de el.
+const WORLD_SPAWN_X = [16, 88, 264, 88, 264, 88, 264, 72]
+const WORLD_SPAWN_Y = [144, 144, 144, 144, 144, 144, 144, 112]
+const WORLD_UP_X = [272, 88, 264, 88, 264, 88, 264, 72]
+const WORLD_UP_Y = [144, 144, 144, 144, 144, 144, 144, 112]
+
+const WORLD_LINK_L = [-1, -1, -1, -1, -1, -1, -1, -1]
+const WORLD_LINK_R = [-1, -1, -1, -1, -1, -1, -1, -1]
+const WORLD_LINK_U = [-1, 0, 1, 2, 3, 4, 5, 6]
+const WORLD_LINK_D = [1, 2, 3, 4, 5, 6, 7, -1]
+
+// La puerta de la camara, en celdas; -1 en las salas que no tienen.
+const WORLD_DOOR_C0 = [-1, -1, -1, -1, -1, -1, -1, 13]
+const WORLD_DOOR_R0 = [-1, -1, -1, -1, -1, -1, -1, 13]
+const WORLD_DOOR_C1 = [-1, -1, -1, -1, -1, -1, -1, 13]
+const WORLD_DOOR_R1 = [-1, -1, -1, -1, -1, -1, -1, 15]
+
+// El botin, en pixeles; -1 donde no lo hay.
+const WORLD_LOOT_X = [-1, -1, -1, -1, -1, -1, -1, 40]
+const WORLD_LOOT_Y = [-1, -1, -1, -1, -1, -1, -1, 120]
+
+// Palancas: pares x,y en pixeles. No desaparecen al darles: cambian de estado y se quedan puestas, para que se vea lo que llevas hecho.
+const WORLD_LEVERS = [
+    [208, 32, 112, 104, 8, 152, 200, 152],   // The Rooftop
+    [304, 24, 264, 48, 120, 120, 8, 152],   // The Pillars
+    [304, 24, 8, 56, 72, 88, 24, 144],   // The Chimney
+    [304, 56, 280, 112, 152, 152, 304, 152],   // The Spike Hall
+    [64, 48, 304, 56, 48, 88, 8, 152],   // The Girders
+    [304, 24, 56, 48, 56, 120, 8, 152],   // The Overhang
+    [144, 56, 56, 80, 184, 88, 8, 152],   // The Towers
+    [160, 120, 256, 144, 200, 152]   // The Crypt
+]
+
+// Como se agarra cada palanca: 0 apoyada, 1 pared izquierda,
+// 2 pared derecha, 3 colgada del techo.
+const WORLD_LEVER_DIR = [
+    [3, 0, 1, 2],   // The Rooftop
+    [2, 3, 0, 1],   // The Pillars
+    [2, 1, 0, 3],   // The Chimney
+    [2, 3, 0, 2],   // The Spike Hall
+    [3, 2, 0, 1],   // The Girders
+    [2, 3, 0, 1],   // The Overhang
+    [0, 3, 1, 1],   // The Towers
+    [2, 3, 1]   // The Crypt
+]
+
+// Cuadrados de vida: pares x,y. Recargan bateria.
+const WORLD_LIVES = [
+    [96, 152],   // The Rooftop
+    [24, 152],   // The Pillars
+    [280, 48, 272, 152],   // The Chimney
+    [24, 152],   // The Spike Hall
+    [24, 152],   // The Girders
+    [24, 152],   // The Overhang
+    [24, 152],   // The Towers
+    [296, 152]   // The Crypt
+]
+
+// Enemigos, cinco numeros por bicho: tipo (0 ida y vuelta, 1 sube y
+// baja), x, y, y los dos extremos del recorrido en pixeles. El motor
+// los recorta al ancho o al alto del sprite.
+const WORLD_ENEMIES = [
+    [0, 160, 120, 160, 216],   // The Rooftop
+    [1, 160, 104, 104, 160],   // The Pillars
+    [0, 208, 152, 208, 264],   // The Chimney
+    [0, 112, 136, 112, 168],   // The Spike Hall
+    [1, 136, 104, 104, 128],   // The Girders
+    [0, 200, 152, 200, 240],   // The Overhang
+    [1, 248, 120, 120, 160],   // The Towers
+    [0, 120, 120, 120, 160]   // The Crypt
+]
+
+// Plataformas moviles, cinco numeros cada una: tipo (0 va y viene,
+// 1 sube y baja), x, y, y los dos extremos del recorrido en pixeles.
+// Son solidas de verdad y arrastran al robot que va montado.
+const WORLD_PLATS = [
+    [],   // The Rooftop
+    [],   // The Pillars
+    [1, 240, 56, 56, 128],   // The Chimney
+    [],   // The Spike Hall
+    [],   // The Girders
+    [],   // The Overhang
+    [],   // The Towers
+    []   // The Crypt
+]
+
+// Con todas dadas se abre la puerta de la camara.
+const WORLD_LEVERS_TOTAL = 31

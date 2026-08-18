@@ -1,0 +1,39 @@
+// =================================================================
+// JaruMoves - indices del tileset.
+//
+// GENERADO POR Tools/gen_assets.py -- no editar a mano: el indice de
+// cada tile es su posicion en la lista TILES de Tools/art_tiles.py y
+// si se tocan por separado dejan de coincidir con Images/Tiles.bmp.
+// =================================================================
+
+const TILE_PX = 8
+const T_EMPTY = 255
+
+const T_DECK_TOP    = 0
+const T_DECK_BODY   = 1
+const T_PILLAR      = 2
+const T_WALK_TOP    = 3
+const T_WATER_TOP   = 4
+const T_WATER       = 5
+const T_WATER_DEEP  = 6
+const T_CANOPY_TOP  = 7
+const T_CANOPY      = 8
+const T_CANOPY_DEEP = 9
+const T_RIVER_TOP   = 10
+const T_RIVER       = 11
+const T_RIVER_SHAFT = 12
+const T_RIVER_DEEP  = 13
+const T_BED_TOP     = 14
+const T_BED         = 15
+const T_GRASS_A     = 16
+const T_GRASS_B     = 17
+const T_DIRT        = 18
+const T_DIRT_DEEP   = 19
+const T_PLANK_L     = 20
+const T_PLANK_M     = 21
+const T_PLANK_R     = 22
+const T_PIT         = 23
+const T_HQ_TOP      = 24
+const T_HQ_WALL     = 25
+const T_HQ_WIN      = 26
+const T_HQ_DOOR     = 27

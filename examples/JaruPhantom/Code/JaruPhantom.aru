@@ -1,0 +1,2031 @@
+// =================================================================
+// JaruPhantom - plataformas de pantalla fija
+//
+// Un robot ladron entra por la AZOTEA de una torre y BAJA planta a planta
+// dando palancas; con todas dadas cede la puerta de la camara acorazada del
+// fondo, donde esta el botin. Bajar es gratis --te dejas caer-- y volver a
+// subir cuesta la escalera entera, asi que equivocarse de planta se paga.
+//
+// La bateria NO se gasta con el tiempo: solo la muerden los golpes, de los
+// drones y de los pinchos. Los cuadrados de vida devuelven un trozo.
+//
+// Controles en Windows
+//   O / P  o  flechas      izquierda / derecha
+//   Z                      salto ALTO   (gana altura)
+//   SHIFT o SPACE          salto LARGO  (gana distancia)
+//   D                      apaga o enciende el piloto automatico
+//   C                      banco de calibracion de saltos
+//   R                      reiniciar
+//
+// Controles en la TTGO (tres botones, pines 37/38/39)
+//   38 izquierda    39 derecha    37 salto ALTO
+//
+// PENDIENTE DE DECIDIR: con tres botones no cabe el salto LARGO, y sin el la
+// torre no se puede terminar A MANO en placa (los fosos de cinco celdas solo los
+// cruza el largo). En placa se puede ver la partida del piloto de principio a fin
+// y jugar a medias. Las salidas posibles, si alguna dia hace falta: un cuarto
+// boton, un acorde (los dos sentidos a la vez), o que el salto sea alto al toque
+// y largo al mantener --lo que mete retardo al despegue, que en un juego que se
+// juega al pixel se nota. No lo decido yo por mi cuenta.
+//
+// Lo que hay que clavar es el salto, y por eso hay dos. Se elige uno en el
+// despegue y NO hay control en el aire: cada obstaculo esta puesto para
+// pasarse con uno de los dos y no con el otro. Si eso no engancha, lo demas
+// da igual.
+//
+// La ventana mide 320x240 y la habitacion 320x192 (40x24 celdas de 8 px), la
+// misma resolucion en Windows y en placa, sin escalado ni scroll: cada
+// habitacion es una pantalla y ya esta.
+// =================================================================
+
+use Display, Input, GridMap, Bitmap, Sprite, Sound
+
+import "JaruPhantom_World.aru"
+import "JaruPhantom_Route.aru"
+
+var draw = Display.draw
+
+// ----------------------------------------------------------------
+// Pantalla
+// ----------------------------------------------------------------
+const SCREEN_W = 320
+const SCREEN_H = 240
+
+const CELL = 8
+const PLAY_X = 0
+const PLAY_Y = 0
+const PLAY_W = 320              // ROOM_COLS * CELL
+const PLAY_H = 192              // ROOM_ROWS * CELL
+
+const HUD_Y = 192
+const HUD_H = 48
+
+// Paleta del Spectrum. El arte se dibuja con estos 15 colores y con dos por
+// celda de 8x8, que es lo que le da el aire de la epoca.
+const C_BLACK = 0x000000
+const C_BLUE = 0x0000D7
+const C_RED = 0xD70000
+const C_MAGENTA = 0xD700D7
+const C_CYAN = 0x00D7D7
+const C_YELLOW = 0xD7D700
+const C_WHITE = 0xD7D7D7
+const C_BRED = 0xFF0000
+const C_BYELLOW = 0xFFFF00
+const C_BWHITE = 0xFFFFFF
+
+// ----------------------------------------------------------------
+// Fisica
+// ----------------------------------------------------------------
+// Paso fijo a 50 Hz con acumulador y dibujado a fps libres. Sin esto el juego
+// se siente distinto en Windows (cientos de fps) que en placa, porque el
+// salto dependeria del tiempo de fotograma.
+const TICK_MS = 20
+
+// Gravedad propia y colision AABB contra el mapa: nada de PhysicsEngine. El
+// salto tiene que ser una parabola determinista y eso se clava mejor a mano.
+//
+// Con g = 0,25 px/tick^2 la formula continua da v^2/(2g) de altura y 2v/g de
+// vuelo, pero lo que vale son los numeros MEDIDOS a paso discreto, que el
+// banco de calibracion (tecla C, o CALIB_ON) saca sobre suelo plano:
+//
+//     ALTO   vy 5,00  vx 0,75  ->  47,5 px de altura,  29,25 px de alcance
+//     LARGO  vy 3,00  vx 2,40  ->  16,5 px de altura,  55,20 px de alcance
+//
+// Y de ahi salen los dos obstaculos de la primera sala, cada uno con UNA sola
+// solucion:
+//
+//     foso de pinchos, 40 px   largo pasa por 15,2   alto falla por 10,8
+//     escalon,         32 px   alto  pasa por 15,5   largo falla por 15,5
+//
+// Margen de 10 px o mas por los dos lados, que a 1 px por tick de carrera es
+// holgura de sobra para que no dependa del pixel exacto de despegue.
+// Tools/verify_rooms.py lo vuelve a comprobar sobre el mapa ya generado.
+const GRAVITY = 0.25
+const WALK_SPEED = 1.0
+const MAX_FALL = 5.0
+const JUMP_HIGH_VY = -5.00
+const JUMP_HIGH_VX = 0.75
+const JUMP_LONG_VY = -3.00
+const JUMP_LONG_VX = 2.40
+
+const PLAYER_W = 12
+const PLAYER_H = 16
+const ANIM_TICKS = 5
+
+// Fotogramas del sprite del robot, tal como los monta Tools/build_sprites.py
+const FRAME_WALK_FIRST = 1
+const FRAME_WALK_LAST = 4
+const FRAME_JUMP = 5
+
+// Valores de la capa logica del mapa, tal como los escribe build_rooms.py
+const CV_FREE = 0
+const CV_SOLID = 1
+const CV_HURT = 2
+
+// ----------------------------------------------------------------
+// Bateria
+// ----------------------------------------------------------------
+// Una sola vida. La barra NO baja con el tiempo: solo se pierde bateria al
+// tocar un dron o los pinchos, como en el juego en que esta inspirado. Asi no
+// hay prisa; de lo que hay que ocuparse es de no comerse los golpes.
+const BATTERY_MAX = 120
+const BATTERY_HIT = 12          // una decima parte de la barra por golpe
+const BATTERY_LIFE = 30         // lo que devuelve un cuadrado de vida
+const LIVES_ON = true           // a false si las recargas sobran
+const HIT_COOLDOWN = 40         // sin esto, quedarse sobre los pinchos mata en un suspiro
+// Las dos pausas del final de partida estan medidas contra SU cancion: la del
+// game over dura 5,3 s y la fanfarria 4,4 s (las imprime Tools/build_music.py).
+// Cortar la musica a mitad de frase suena a fallo, no a final.
+const DEAD_TICKS = 280
+const WIN_TICKS = 250
+
+// ----------------------------------------------------------------
+// Estados
+// ----------------------------------------------------------------
+// La caratula es un estado, no una pantalla que se dibuja antes del bucle: asi
+// suena su propia musica, se sale de ella con una tecla y se vuelve a ella al
+// morir o al ganar, sin duplicar el bucle principal.
+const ST_TITLE = 0
+const ST_PLAY = 1
+
+// ----------------------------------------------------------------
+// Sondeo de los botones al arrancar
+// ----------------------------------------------------------------
+// En placa, `Input.pressed` sobre un GPIO hace `!digitalRead(pin)`: los botones
+// son ACTIVOS A NIVEL BAJO. Y las GPIO 34..39 del ESP32 son de solo entrada y NO
+// tienen pull-up interno, asi que en una placa sin botones cableados esos pines
+// FLOTAN y se leen como pulsados para siempre.
+//
+// Eso rompia el juego solo en placa: la caratula se saltaba al instante, el piloto
+// se apagaba en el primer tick creyendo que alguien jugaba, y el robot daba un
+// salto (el flanco del boton fantasma) y se quedaba clavado contra la pared
+// izquierda con izquierda y derecha pulsadas a la vez.
+//
+// Arreglo: al arrancar se sondean los botones unos ticks. Nadie esta pulsando
+// mientras carga el programa, asi que si dicen que si, no son botones: son pines
+// al aire. Se desconfia de ellos y la partida se juega sola, que es lo que hace
+// una placa sin mandos.
+const INPUT_PROBE = 30          // ticks de sondeo (0,6 s)
+const YIELD_TICKS = 5           // ticks que hay que mantener para apartar al piloto
+// Arranca sola pasado este tiempo. Hace falta por dos motivos: en placa no hay
+// teclado (hasInput es false) y la demo del piloto tiene que poder correr sin
+// nadie delante.
+const TITLE_AUTO = 500          // 10 s a 50 Hz
+
+// El marcador va en dos lineas dentro de los 48 px del panel. La fuente de la
+// VM gasta unos 8,4 px por caracter, asi que cada rotulo tiene que caber en lo
+// que queda hasta los 320 de ancho o se sale de la pantalla sin avisar.
+const BAR_X = 8
+const BAR_Y = 198
+const BAR_W = 128
+const BAR_H = 16
+const BAR_IN_X = 12
+const BAR_IN_Y = 202
+const BAR_IN_W = 120
+const BAR_IN_H = 8
+const HUD_ROW1 = 200
+const HUD_ROW2 = 222
+const BAR_RED = 24              // la barra se vacia de derecha a izquierda:
+const BAR_MAGENTA = 48          // llegar al rojo es estar a punto de caer
+
+enum ACTION
+    LEFT, RIGHT, JUMP_HIGH, JUMP_LONG,
+    ALT_LEFT, ALT_RIGHT, ALT_HIGH, ALT_LONG,
+    TOGGLE_DEMO, TOGGLE_CALIB, RESTART
+end
+
+// ----------------------------------------------------------------
+// Estado
+// ----------------------------------------------------------------
+var roomIdx = 0
+var roomTiles = nil             // capa de dibujo (indices de tile)
+var roomCells = nil             // capa logica (libre / solido / dano)
+var roomTileset = nil
+
+var sprPlayer = nil
+var sprLever = nil
+var sprLife = nil
+var sprDrone = nil
+var sprPlat = nil
+var sprDoor = nil
+var sprLoot = nil
+var leverW = 8
+var leverH = 8
+var lifeW = 8
+var lifeH = 8
+var droneW = 12
+var droneH = 8
+var lootW = 16
+var lootH = 16
+
+// La puerta de la camara. Va marcada como solida en el mapa y solo deja de
+// serlo con todas las piezas encima; por eso el estado vive aqui y no en el
+// `.gmap`, que es estatico.
+var doorOpen = false
+var doorC0 = -1
+var doorR0 = -1
+var doorC1 = -1
+var doorR1 = -1
+var lootX = -1
+var lootY = -1
+var won = false
+var winTicks = 0
+
+var player = nil
+var drones = []
+// Las palancas NO desaparecen al darles: cambian de estado y se quedan
+// puestas, asi que al volver a pasar por una sala se ve lo que llevas hecho.
+var leverX = []
+var leverY = []
+var leverOn = []
+var leverDir = []
+var onAll = []                  // el estado de cada palanca, por habitacion
+var leversDone = 0
+var lifeX = []
+var lifeY = []
+var lifeTaken = []
+var takenLives = []
+
+var battery = BATTERY_MAX
+var hitCool = 0
+var deadTicks = 0
+var gameOver = false
+
+var hasInput = true
+var tickCount = 0
+
+var state = ST_TITLE
+var titleTicks = 0
+var coverBmp = nil
+var probeTicks = 0
+var probeStuck = []             // lecturas pulsadas por accion durante el sondeo
+var actionOk = []               // false = pin al aire, esa accion se ignora
+var yieldHold = 0
+
+func Clamp(v, lo, hi)
+    if (v < lo) then return lo end
+    if (v > hi) then return hi end
+    return v
+end
+
+func Abs(v)
+    if (v < 0) then return -v end
+    return v
+end
+
+// ----------------------------------------------------------------
+// Sonido
+// ----------------------------------------------------------------
+// Reparto deliberado: la MUSICA es un asset (Music/Theme.jmu, que compone
+// Tools/build_music.py) y los EFECTOS se hacen por codigo con Sound.tone y
+// Sound.noise. Cada cosa donde le toca: una melodia de cuatro voces no se escribe
+// a mano en el bucle del juego, y un efecto de 80 ms tampoco merece un fichero.
+//
+// La musica usa los canales 0..3 (tonos) y el 4 (ruido) del mezclador, o sea
+// todos. Los efectos entran por el MISMO canal 2 con PRIORIDAD, que es lo que les
+// da paso por encima de la musica: el mezclador respeta la prioridad y el
+// secuenciador no puede echar a un SFX que valga mas que sus notas. Se pierde una
+// voz del arpegio durante el efecto y no se nota.
+const MUSIC_PATH = "Music/Theme.jmu"
+const TITLE_MUSIC_PATH = "Music/Title.jmu"
+const OVER_MUSIC_PATH = "Music/GameOver.jmu"
+const WIN_MUSIC_PATH = "Music/Fanfare.jmu"
+const SFX_CH = 2
+const SFX_PRIORITY = 40
+const MASTER_VOL_WIN = 200
+const MASTER_VOL_ESP = 255
+const MUSIC_VOL = 110           // por debajo de los efectos, que son la informacion
+
+var soundOk = false
+var musicOn = false
+
+func InitSound()
+    soundOk = Sound.init()
+    if (not soundOk) then
+        println("sin sonido: Sound.init() ha fallado")
+        return
+    end
+    if (platform() == HW_ESP32S3 or platform() == HW_ESP32) then
+        Sound.setMasterVolume(MASTER_VOL_ESP)
+    else
+        Sound.setMasterVolume(MASTER_VOL_WIN)
+    end
+    Sound.setMusicVolume(MUSIC_VOL)
+    Sound.stopAll()
+end
+
+// Una sola ranura de musica en el mezclador, asi que cambiar de cancion es
+// pararla, descargarla y cargar la siguiente. `loop` a false para las que se
+// oyen una vez (el game over y la fanfarria).
+func PlayTune(path, loop)
+    if (not soundOk) then return false end
+    Sound.stopMusic()
+    Sound.unloadMusic()
+    if (not Sound.loadMusic(path)) then
+        println("no se ha podido cargar la musica: ", path)
+        musicOn = false
+        return false
+    end
+    if (not Sound.playMusic(loop)) then
+        println("no se ha podido arrancar la musica: ", path)
+        Sound.unloadMusic()
+        musicOn = false
+        return false
+    end
+    musicOn = true
+    return true
+end
+
+func StartMusic()
+    return PlayTune(MUSIC_PATH, true)
+end
+
+// Los efectos: barridos cortos de frecuencia, que es lo que suena a maquina. El
+// sentido del barrido lleva la informacion -- hacia arriba las cosas buenas,
+// hacia abajo las malas -- para que se entiendan sin mirar.
+func SfxJumpHigh()
+    if (not soundOk) then return end
+    Sound.tone(SFX_CH, 300, 90, 0, 110, SFX_PRIORITY)
+    Sound.slideFreq(SFX_CH, 760, 110)
+end
+
+func SfxJumpLong()
+    if (not soundOk) then return end
+    Sound.tone(SFX_CH, 220, 90, 0, 150, SFX_PRIORITY)
+    Sound.slideFreq(SFX_CH, 430, 150)
+end
+
+func SfxLever()
+    if (not soundOk) then return end
+    Sound.tone(SFX_CH, 900, 120, 3, 70, SFX_PRIORITY)
+    Sound.slideFreq(SFX_CH, 1800, 70)
+end
+
+func SfxLife()
+    if (not soundOk) then return end
+    Sound.tone(SFX_CH, 700, 110, 1, 200, SFX_PRIORITY)
+    Sound.slideFreq(SFX_CH, 1400, 200)
+end
+
+func SfxHit()
+    if (not soundOk) then return end
+    Sound.tone(SFX_CH, 420, 130, 2, 220, SFX_PRIORITY)
+    Sound.slideFreq(SFX_CH, 70, 220)
+    Sound.noise(140, 26, 0, 200, SFX_PRIORITY)
+end
+
+// Al morir y al ganar NO hay efecto: entra una cancion entera en su lugar, que es
+// lo que marca el final de la partida. El efecto se quedaria pisado por ella.
+func MusicGameOver()
+    PlayTune(OVER_MUSIC_PATH, false)
+end
+
+func MusicWin()
+    PlayTune(WIN_MUSIC_PATH, false)
+end
+
+func SfxDoor()
+    if (not soundOk) then return end
+    Sound.tone(SFX_CH, 120, 140, 1, 600, SFX_PRIORITY)
+    Sound.slideFreq(SFX_CH, 900, 600)
+end
+
+func MusicTitle()
+    PlayTune(TITLE_MUSIC_PATH, true)
+end
+
+// TODOS los fotogramas de TODOS los sprites los elige el juego, ninguno la VM:
+// el del robot sale de animate(), el de la palanca de si esta dada, el de la
+// puerta de si esta abierta, y el del cuadrado de vida de tickCount.
+//
+// Y hay que decirlo explicitamente, porque un sprite recien cargado trae la
+// animacion automatica encendida (el `fps` de su .json) y `draw.sprite` llama a
+// SpriteTickAnimation ANTES de elegir el bitmap: en cuanto pasan los
+// milisegundos de su frameRate, el sprite se adelanta un fotograma el solo justo
+// antes de pintarse y dibuja el que no toca. Se veia como un parpadeo suelto de
+// las palancas, y solo en algunas: las palancas de una sala comparten un unico
+// objeto sprite, asi que de cada adelanto se lleva el flash la que estuviese
+// dibujandose en ese instante, que cada vez es otra.
+//
+// A 0 tambien el cuadrado de vida late mejor: su parpadeo pasa a ir con el tick
+// de 50 Hz en vez de con el reloj de pared de la VM.
+func SinAutoAnim(s)
+    s.frameRate = 0
+    return s
+end
+
+func Overlap(ax, ay, aw, ah, bx, by, bw, bh)
+    if (ax + aw <= bx) then return false end
+    if (bx + bw <= ax) then return false end
+    if (ay + ah <= by) then return false end
+    if (by + bh <= ay) then return false end
+    return true
+end
+
+// ----------------------------------------------------------------
+// Entrada
+// ----------------------------------------------------------------
+// Los flancos se calculan A MANO, una sola vez por tick, y NO con
+// Input.justPressed. La VM guarda un unico "estado anterior" por accion y lo
+// reescribe en cada consulta al modulo; como el dibujado va a fps libres y
+// tambien consulta el teclado, se come el flanco antes de que el tick de
+// 50 Hz llegue a verlo y los saltos no salen.
+var inLeft = false
+var inRight = false
+var inHigh = false
+var inLong = false
+var inHighPrev = false
+var inLongPrev = false
+
+func SetupInput()
+    if (platform() == HW_ESP32S3) then
+        hasInput = false
+        return
+    end
+
+    if (platform() == HW_WIN32) then
+        Input.map(ACTION.LEFT, "O")
+        Input.map(ACTION.RIGHT, "P")
+        Input.map(ACTION.JUMP_HIGH, "Z")
+        Input.map(ACTION.JUMP_LONG, "SHIFT")
+        Input.map(ACTION.ALT_LEFT, "LEFT")
+        Input.map(ACTION.ALT_RIGHT, "RIGHT")
+        Input.map(ACTION.ALT_HIGH, "UP")
+        Input.map(ACTION.ALT_LONG, "SPACE")
+        Input.map(ACTION.TOGGLE_DEMO, "D")
+        Input.map(ACTION.TOGGLE_CALIB, "C")
+        Input.map(ACTION.RESTART, "R")
+    elsif (platform() == HW_ESP32) then
+        // TTGO: TRES botones, en los pines 37, 38 y 39. Nada mas.
+        //
+        // Antes esto mapeaba tambien el pin 36 al salto alto, y ahi no hay boton.
+        // Las GPIO 34..39 del ESP32 son de solo entrada y no tienen pull-up
+        // interno, asi que un pin sin boton FLOTA; y como `Input.pressed` en placa
+        // hace `!digitalRead(pin)` --activo a nivel bajo-- se leia PULSADO para
+        // siempre. Resultado en la placa y solo en la placa: la caratula se
+        // saltaba de golpe, el piloto se apagaba en el primer tick creyendo que
+        // habia alguien jugando, el robot daba UN salto alto (el flanco del boton
+        // fantasma) y se quedaba quieto, porque izquierda y derecha si son botones
+        // de verdad y estaban sueltos.
+        //
+        // Con tres botones no caben las cuatro acciones: se quedan andar a los dos
+        // lados y el salto ALTO, que es el que hace falta en cada planta. El salto
+        // LARGO no tiene boton (ver la nota del final del fichero).
+        Input.map(ACTION.LEFT, 38)
+        Input.map(ACTION.RIGHT, 39)
+        Input.map(ACTION.JUMP_HIGH, 37)
+    end
+end
+
+func Held(a, b)
+    if (not hasInput) then return false end
+    return Input.pressed(a) or Input.pressed(b)
+end
+
+func TappedHigh()
+    return inHigh and (not inHighPrev)
+end
+
+func TappedLong()
+    return inLong and (not inLongPrev)
+end
+
+// ----------------------------------------------------------------
+// Mapa
+// ----------------------------------------------------------------
+const CALIB_FLOOR_ROW = 20      // el suelo del banco, a la altura del real
+const CALIB_ON = false          // arrancar directamente en el banco (tambien tecla C)
+var calibMode = CALIB_ON
+
+func CellAt(cx, cy)
+    // En calibracion el decorado desaparece y queda un suelo plano infinito.
+    // Sobre el terreno real los arcos se cortan contra las plataformas y los
+    // numeros medidos no valen para nada.
+    if (calibMode) then
+        if (cy >= CALIB_FLOOR_ROW) then return CV_SOLID end
+        return CV_FREE
+    end
+    // Fuera del mapa se considera libre: es lo que permite salir por un borde
+    // y cambiar de habitacion. Las paredes de verdad estan dibujadas.
+    if (cx < 0 or cy < 0 or cx >= ROOM_COLS or cy >= ROOM_ROWS) then return CV_FREE end
+    // La puerta de la camara esta grabada como solida y se abre en caliente.
+    // La guarda del booleano evita pagar las cuatro comparaciones en todas las
+    // consultas de la partida, que son muchas por tick.
+    if (doorOpen) then
+        if (cx >= doorC0 and cx <= doorC1 and cy >= doorR0 and cy <= doorR1) then
+            return CV_FREE
+        end
+    end
+    return roomCells.get(cx, cy)
+end
+
+// div sobre un valor negativo no da lo que uno espera, y el jugador si puede
+// tener x negativa mientras cruza a la habitacion de al lado.
+func CellOf(v)
+    if (v < 0) then return -1 end
+    return v div CELL
+end
+
+func BoxHasCell(x, y, w, h, want)
+    var c0 = CellOf(x)
+    var c1 = CellOf(x + w - 1)
+    var r0 = CellOf(y)
+    var r1 = CellOf(y + h - 1)
+    var r = r0
+    while (r <= r1)
+        var c = c0
+        while (c <= c1)
+            if (CellAt(c, r) == want) then return true end
+            c = c + 1
+        end
+        r = r + 1
+    end
+    return false
+end
+
+// Las plataformas moviles son solidas DE VERDAD, no decorado: se meten en la
+// misma consulta que el terreno y con eso el robot las pisa, se para contra
+// ellas y las ve con la sonda de onGround sin cambiar una linea de MoveX,
+// MoveY ni del piloto. Un tilemap no sirve para esto: un tile esta clavado a su
+// celda y una plataforma se mueve en fracciones de pixel.
+var plats = []
+
+func PlatHits(x, y, w, h)
+    // El banco de calibracion mide arcos sobre un suelo raso e infinito: si le
+    // entra una plataforma por medio, los numeros medidos no valen para nada.
+    if (calibMode) then return false end
+    var i = 0
+    while (i < len(plats))
+        var p = plats[i]
+        if (Overlap(x, y, w, h, p.x, p.y, PLAT_W, PLAT_H)) then return true end
+        i = i + 1
+    end
+    return false
+end
+
+func BoxHitsSolid(x, y, w, h)
+    if (BoxHasCell(x, y, w, h, CV_SOLID)) then return true end
+    return PlatHits(x, y, w, h)
+end
+
+func BoxHitsHurt(x, y, w, h)
+    return BoxHasCell(x, y, w, h, CV_HURT)
+end
+
+func SolidAtPx(px, py)
+    return CellAt(CellOf(px), CellOf(py)) == CV_SOLID
+end
+
+func LoadRoom(idx)
+    roomIdx = idx
+    roomTileset = Bitmap.load("Images/Tiles_" + WORLD_TILESET[idx] + ".bmp")
+
+    roomTiles = GridMap.load("Maps/" + WORLD_MAP[idx] + "_tiles.gmap")
+    roomTiles.tSize(CELL, CELL)
+    roomTiles.tileset = roomTileset
+    roomTiles.x = PLAY_X
+    roomTiles.y = PLAY_Y
+
+    roomCells = GridMap.load("Maps/" + WORLD_MAP[idx] + "_cells.gmap")
+    roomCells.tSize(CELL, CELL)
+
+    doorC0 = WORLD_DOOR_C0[idx]
+    doorR0 = WORLD_DOOR_R0[idx]
+    doorC1 = WORLD_DOOR_C1[idx]
+    doorR1 = WORLD_DOOR_R1[idx]
+    lootX = WORLD_LOOT_X[idx]
+    lootY = WORLD_LOOT_Y[idx]
+
+    // Las piezas se quedan cogidas al volver a entrar: la marca vive en
+    // takenAll, que se monta una vez al arrancar y no se toca aqui.
+    leverOn = onAll[idx]
+    leverDir = WORLD_LEVER_DIR[idx]
+    leverX = []
+    leverY = []
+    var p = WORLD_LEVERS[idx]
+    var i = 0
+    while (i < len(p))
+        leverX.append(p[i])
+        leverY.append(p[i + 1])
+        i = i + 2
+    end
+
+    lifeTaken = takenLives[idx]
+    lifeX = []
+    lifeY = []
+    var q = WORLD_LIVES[idx]
+    var j3 = 0
+    while (j3 < len(q))
+        lifeX.append(q[j3])
+        lifeY.append(q[j3 + 1])
+        j3 = j3 + 2
+    end
+
+    drones = []
+    var e = WORLD_ENEMIES[idx]
+    var j = 0
+    while (j < len(e))
+        drones.append(ObjDrone(e[j], e[j + 1], e[j + 2], e[j + 3], e[j + 4]))
+        j = j + 5
+    end
+
+    plats = []
+    var m = WORLD_PLATS[idx]
+    var j2 = 0
+    while (j2 < len(m))
+        plats.append(ObjPlat(m[j2], m[j2 + 1], m[j2 + 2], m[j2 + 3], m[j2 + 4]))
+        j2 = j2 + 5
+    end
+end
+
+// ----------------------------------------------------------------
+// Enemigos: patron cerrado, cero IA
+// ----------------------------------------------------------------
+const DRONE_SPEED = 0.6
+
+class ObjDrone
+    def init(kind, x, y, lo, hi)
+        this.kind = kind        // 0 ida y vuelta, 1 sube y baja
+        this.x = x
+        this.y = y
+        this.frame = 0
+        this.tick = 0
+        this.dir = 1
+        // El mapa da el recorrido en celdas enteras; aqui se descuenta el
+        // tamano del sprite para que no se salga del hueco que tiene dibujado.
+        if (kind == 0) then
+            this.lo = lo
+            this.hi = hi - droneW
+        else
+            this.lo = lo
+            this.hi = hi - droneH
+        end
+        if (this.hi < this.lo) then this.hi = this.lo end
+    end
+
+    def update()
+        var v = this.dir * DRONE_SPEED
+        if (this.kind == 0) then
+            this.x = this.x + v
+            if (this.x <= this.lo) then
+                this.x = this.lo
+                this.dir = 1
+            elsif (this.x >= this.hi) then
+                this.x = this.hi
+                this.dir = -1
+            end
+        else
+            this.y = this.y + v
+            if (this.y <= this.lo) then
+                this.y = this.lo
+                this.dir = 1
+            elsif (this.y >= this.hi) then
+                this.y = this.hi
+                this.dir = -1
+            end
+        end
+
+        this.tick = this.tick + 1
+        if (this.tick >= 6) then
+            this.tick = 0
+            this.frame = 1 - this.frame
+        end
+    end
+
+    def draw()
+        sprDrone.frame = this.frame
+        sprDrone.x = PLAY_X + this.x + droneW / 2
+        sprDrone.y = PLAY_Y + this.y + droneH / 2
+        draw.sprite(sprDrone)
+    end
+end
+
+// ----------------------------------------------------------------
+// Plataformas moviles
+// ----------------------------------------------------------------
+// Recorrido cerrado, ida y vuelta, igual que los drones: nada de esperar a que
+// el jugador se suba. Asi el momento en que llega arriba es previsible y se
+// puede cronometrar el salto, que es lo que la hace jugable y no una loteria.
+const PLAT_W = 24               // tres celdas: caben los 12 px del robot de sobra
+const PLAT_H = 8
+const PLAT_SPEED = 0.5          // 25 px/s: subir cuatro celdas cuesta poco mas de un segundo
+
+class ObjPlat
+    def init(kind, x, y, lo, hi)
+        this.kind = kind        // 0 ida y vuelta, 1 sube y baja
+        this.x = x
+        this.y = y
+        this.dir = 1
+        // Lo que se ha movido ESTE tick. Es lo que se le suma al robot montado:
+        // calcularlo a partir de dir y PLAT_SPEED daria de mas en el tick en que
+        // la plataforma topa con el extremo y da la vuelta.
+        this.dx = 0.0
+        this.dy = 0.0
+        this.frame = 0
+        this.tick = 0
+        // El recorrido viene en pixeles de borde a borde; se le descuenta el
+        // tamano de la plataforma para que no se salga del hueco dibujado.
+        this.lo = lo
+        if (kind == 0) then
+            this.hi = hi - PLAT_W
+        else
+            this.hi = hi - PLAT_H
+        end
+        if (this.hi < this.lo) then this.hi = this.lo end
+    end
+
+    def update()
+        var v = this.dir * PLAT_SPEED
+        this.dx = 0.0
+        this.dy = 0.0
+        if (this.kind == 0) then
+            var nx = this.x + v
+            if (nx <= this.lo) then
+                nx = this.lo
+                this.dir = 1
+            elsif (nx >= this.hi) then
+                nx = this.hi
+                this.dir = -1
+            end
+            this.dx = nx - this.x
+            this.x = nx
+        else
+            var ny = this.y + v
+            if (ny <= this.lo) then
+                ny = this.lo
+                this.dir = 1
+            elsif (ny >= this.hi) then
+                ny = this.hi
+                this.dir = -1
+            end
+            this.dy = ny - this.y
+            this.y = ny
+        end
+
+        this.tick = this.tick + 1
+        if (this.tick >= 8) then
+            this.tick = 0
+            this.frame = 1 - this.frame
+        end
+    end
+
+    def draw()
+        sprPlat.frame = this.frame
+        sprPlat.x = PLAY_X + this.x + PLAT_W / 2
+        sprPlat.y = PLAY_Y + this.y + PLAT_H / 2
+        draw.sprite(sprPlat)
+    end
+end
+
+// ----------------------------------------------------------------
+// El robot
+// ----------------------------------------------------------------
+// Medicion de saltos: se apunta el despegue y se informa al aterrizar. Es la
+// unica forma de saber la altura y el alcance de verdad sin jugarlo a mano.
+var jumpActive = false
+var jumpKind = ""
+var jumpFromX = 0.0
+var jumpFromY = 0.0
+var jumpPeak = 0.0
+var jumpTicks = 0
+
+class ObjPlayer
+    def init()
+        this.reset()
+    end
+
+    def reset()
+        this.x = WORLD_SPAWN_X[roomIdx]
+        this.y = WORLD_SPAWN_Y[roomIdx]
+        this.vx = 0.0
+        this.vy = 0.0
+        this.facingRight = true
+        this.onGround = false
+        this.animFrame = 0
+        this.animTick = 0
+    end
+
+    def update()
+        // Estar en el suelo se comprueba sondeando lo que hay justo debajo, no
+        // recordando si la ultima caida choco. Con gravedad fraccionaria el
+        // choque solo ocurre en ticks alternos y el estado parpadea, y con el
+        // se pierde la mitad de las ordenes de salto.
+        this.onGround = BoxHitsSolid(this.x, this.y + 1.0, PLAYER_W, PLAYER_H)
+
+        // Sin control en el aire: la velocidad horizontal solo se toca con los
+        // pies en el suelo. Es lo que obliga a elegir bien el salto antes de
+        // despegar, que es el juego entero.
+        if (this.onGround) then
+            this.vx = 0.0
+            if (inLeft) then
+                this.vx = -WALK_SPEED
+                this.facingRight = false
+            elsif (inRight) then
+                this.vx = WALK_SPEED
+                this.facingRight = true
+            end
+
+            if (TappedHigh()) then
+                this.Launch(JUMP_HIGH_VY, JUMP_HIGH_VX, "alto")
+                SfxJumpHigh()
+            elsif (TappedLong()) then
+                this.Launch(JUMP_LONG_VY, JUMP_LONG_VX, "largo")
+                SfxJumpLong()
+            end
+        end
+
+        this.vy = this.vy + GRAVITY
+        if (this.vy > MAX_FALL) then this.vy = MAX_FALL end
+
+        this.MoveX()
+        this.MoveY()
+        this.animate()
+        this.MeasureJump()
+    end
+
+    def Launch(vy, vx, kind)
+        this.vy = vy
+        this.onGround = false
+        if (inLeft) then
+            this.vx = -vx
+        elsif (inRight) then
+            this.vx = vx
+        else
+            this.vx = 0.0
+        end
+
+        jumpActive = true
+        jumpKind = kind
+        jumpFromX = this.x
+        jumpFromY = this.y
+        jumpPeak = this.y
+        jumpTicks = 0
+    end
+
+    def MoveX()
+        if (this.vx == 0.0) then return end
+        var nx = this.x + this.vx
+        if (BoxHitsSolid(nx, this.y, PLAYER_W, PLAYER_H)) then
+            // pegarse al muro y perder el avance que quedaba
+            var step = 1.0
+            if (this.vx < 0.0) then step = -1.0 end
+            while (not BoxHitsSolid(this.x + step, this.y, PLAYER_W, PLAYER_H))
+                this.x = this.x + step
+            end
+            this.vx = 0.0
+        else
+            this.x = nx
+        end
+    end
+
+    def MoveY()
+        var ny = this.y + this.vy
+        if (BoxHitsSolid(this.x, ny, PLAYER_W, PLAYER_H)) then
+            var step = 1.0
+            if (this.vy < 0.0) then step = -1.0 end
+            while (not BoxHitsSolid(this.x, this.y + step, PLAYER_W, PLAYER_H))
+                this.y = this.y + step
+            end
+            this.vy = 0.0
+        else
+            this.y = ny
+        end
+    end
+
+    def Ride(p)
+        // Ir montado en una plataforma: pegarse a su cara de arriba y
+        // acompanarla en horizontal.
+        //
+        // Las dos comprobaciones se hacen contra el TERRENO solo, con
+        // BoxHasCell y no con BoxHitsSolid: montado en una plataforma, chocar
+        // contra ella misma dejaria al robot clavado en el sitio en cuanto la
+        // plataforma se moviese un pixel.
+        var ny = p.y - PLAYER_H
+        if (not BoxHasCell(this.x, ny, PLAYER_W, PLAYER_H, CV_SOLID)) then
+            this.y = ny
+            if (this.vy > 0.0) then this.vy = 0.0 end
+        end
+        if (p.dx != 0.0) then
+            var nx = this.x + p.dx
+            if (not BoxHasCell(nx, this.y, PLAYER_W, PLAYER_H, CV_SOLID)) then
+                this.x = nx
+            end
+        end
+    end
+
+    // Fotogramas del robot: 0 parado, 1..4 el ciclo de andar, 5 en el aire.
+    // El ciclo es de CUATRO y no de dos: alternando dos poses el paso se veia
+    // como un parpadeo, no como andar.
+    def animate()
+        if (not this.onGround) then
+            this.animFrame = FRAME_JUMP
+            this.animTick = 0
+            return
+        end
+        if (this.vx != 0.0) then
+            this.animTick = this.animTick + 1
+            if (this.animTick >= ANIM_TICKS) then
+                this.animTick = 0
+                this.animFrame = this.animFrame + 1
+                if (this.animFrame > FRAME_WALK_LAST) then
+                    this.animFrame = FRAME_WALK_FIRST
+                end
+            end
+        else
+            this.animTick = 0
+            this.animFrame = 0
+        end
+    end
+
+    def MeasureJump()
+        if (not jumpActive) then return end
+        jumpTicks = jumpTicks + 1
+        if (this.y < jumpPeak) then jumpPeak = this.y end
+        if (BoxHitsSolid(this.x, this.y + 1.0, PLAYER_W, PLAYER_H)) then
+            // Solo habla en el BANCO (tecla C), que es para lo que existe la
+            // medicion. En una partida normal era una linea por salto.
+            if (calibMode) then
+                var alto = jumpFromY - jumpPeak
+                var largo = Abs(this.x - jumpFromX)
+                println("salto ", CalibLabel(calibStep), ": altura ", alto,
+                        " px, alcance ", largo, " px, vuelo ", jumpTicks, " ticks")
+            end
+            jumpActive = false
+        end
+    end
+
+    def draw()
+        // El modulo Sprite ancla por el CENTRO del fotograma, no por la
+        // esquina como draw.bitmap. Sin sumar medio cuerpo el robot sale
+        // flotando medio sprite por encima del suelo.
+        sprPlayer.x = PLAY_X + this.x + PLAYER_W / 2
+        sprPlayer.y = PLAY_Y + this.y + PLAYER_H / 2
+        sprPlayer.flipX = (not this.facingRight)
+        sprPlayer.frame = this.animFrame
+        draw.sprite(sprPlayer)
+    end
+end
+
+// ----------------------------------------------------------------
+// Piloto automatico
+// ----------------------------------------------------------------
+// El juego se juega solo por defecto, para poder verlo funcionar sin tocar el
+// teclado. Se apaga con la tecla D.
+//
+// No es un guion de tiempos sino un piloto reactivo, y sobre todo NO es "salta
+// cuando el muro te pare": desde pegado a la pared el salto no llega, porque
+// la primera colision horizontal le come la velocidad y sube en vertical, sin
+// avanzar lo suficiente para caer encima. Mira lo que hay DELANTE y elige el
+// salto que toca, que ademas es exactamente la decision que tiene que tomar
+// quien juegue.
+const DEMO_ON = true
+const LOOK_WALL = 16            // dos celdas: cae dentro de la ventana de despegue
+const LOOK_GAP = 8              // una celda por delante del morro
+const LOOK_REACH = 56           // alcance util del salto largo, redondeado a celda
+const LOOK_CLIMB = 48           // altura util del salto alto, redondeada a celda
+// La misma distancia que LOOK_WALL, y no por casualidad: las dos preguntan
+// "?salto ya para caer encima de eso?", y el alcance del salto alto es de
+// 29,25 px. Con 32 px despegaba demasiado pronto y aterrizaba un cuarto de
+// pixel corto del borde de la plataforma, una y otra vez.
+const LOOK_LEDGE = 16
+
+var demoMode = DEMO_ON
+
+// ----------------------------------------------------------------
+// La partida ya resuelta
+// ----------------------------------------------------------------
+// Pasarse la torre no es un problema de reflejos sino de planificacion: en que
+// orden se cogen las piezas y por donde se sube. Eso lo resuelve
+// Tools/route.py FUERA del juego, con la misma fisica, y deja el resultado en
+// ROUTE como pares (mascara de teclas, ticks). Aqui solo se reproduce.
+//
+// La reproduccion es exacta porque el paso es determinista y el planificador
+// usa la misma aritmetica; no es "una IA que suele pasarselo", es la partida
+// ya jugada. Si se acaba la ruta sin ganar, toma el mando el piloto reactivo.
+// La ruta viene partida en trozos porque un literal de lista de JARU no pasa
+// de 254 elementos: con 255 la VM se cuelga al cargar y no da ningun error.
+const ROUTE_ON = true
+var routeChunk = 0
+var routeIdx = 0
+var routeLeft = 0
+var routeMask = 0
+var routeDone = false
+
+func Bit(v, b)
+    return ((v div b) % 2) == 1
+end
+
+// Coge el siguiente par (mascara, ticks), saltando de trozo si toca.
+func RouteNext()
+    while (routeChunk < len(ROUTE))
+        var seg = ROUTE[routeChunk]
+        if (routeIdx + 1 < len(seg)) then
+            routeMask = seg[routeIdx]
+            routeLeft = seg[routeIdx + 1]
+            routeIdx = routeIdx + 2
+            return true
+        end
+        routeChunk = routeChunk + 1
+        routeIdx = 0
+    end
+    return false
+end
+
+func RouteInput()
+    inLeft = false
+    inRight = false
+    inHigh = false
+    inLong = false
+
+    if (routeLeft <= 0) then
+        if (not RouteNext()) then
+            if (not routeDone) then
+                routeDone = true
+                println("ruta agotada en el tick ", tickCount,
+                        " con ", leversDone, " de ", WORLD_LEVERS_TOTAL, " palancas")
+            end
+            DemoInput()
+            return
+        end
+    end
+
+    routeLeft = routeLeft - 1
+    if (Bit(routeMask, 1)) then inLeft = true end
+    if (Bit(routeMask, 2)) then inRight = true end
+    if (Bit(routeMask, 4)) then inHigh = true end
+    if (Bit(routeMask, 8)) then inLong = true end
+end
+var demoDir = 1
+var demoStuck = 0
+var demoNoProgress = 0
+var demoLastX = 0.0
+var demoJumpCool = 0
+var demoTurnCool = 0
+var demoAltJump = false
+
+// Punto de sondeo por delante del morro, segun hacia donde mire
+func AheadX(d, dist)
+    if (d > 0) then return player.x + PLAYER_W - 1 + dist end
+    return player.x - dist
+end
+
+// Una repisa donde el robot cabe de pie: suelo con dos celdas libres encima.
+// Es lo que distingue un sitio al que ir de un simple trozo de muro.
+func StandableCell(cx, cy)
+    if (CellAt(cx, cy) != CV_SOLID) then return false end
+    if (CellAt(cx, cy - 1) != CV_FREE) then return false end
+    return CellAt(cx, cy - 2) == CV_FREE
+end
+
+func BlockedAt(px)
+    // a la altura de la cabeza y de los pies: una repisa de una sola celda
+    // queda a la altura de la cabeza y tambien frena
+    return SolidAtPx(px, player.y + 1) or SolidAtPx(px, player.y + PLAYER_H - 2)
+end
+
+// Columna del muro que tiene delante con margen para despegar, o -1.
+func WallColumnAhead(d)
+    var px = AheadX(d, LOOK_WALL)
+    if (BlockedAt(px)) then return CellOf(px) end
+    return -1
+end
+
+// Ya pegado al muro, con el morro tocandolo. Aqui saltar NO sirve: la primera
+// colision horizontal del salto se come la velocidad y el robot sube en
+// vertical, cae en el mismo sitio y vuelve a empezar. Se pasaba trece segundos
+// dandose contra la primera plataforma antes de rendirse. Lo que toca es
+// retroceder para coger carrerilla.
+//
+// Hace falta un sondeo pegado al morro y no solo el lejano porque las paredes
+// del borde de la habitacion caen FUERA del mapa a dos celdas de distancia, y
+// ahi CellAt devuelve libre a proposito: es lo que permite salir por un borde.
+func WallFlush(d)
+    return BlockedAt(AheadX(d, 2))
+end
+
+// Un muro solo merece un salto si hay donde caer arriba. Contra el paredon del
+// fondo de la sala no lo hay, y el piloto se quedaba dando botes en la esquina
+// hasta que el contador largo se rendia.
+func WallClimbableAt(cx)
+    var feet = player.y + PLAYER_H - 1
+    var up = 0
+    while (up <= LOOK_CLIMB)
+        if (StandableCell(cx, CellOf(feet - up))) then return true end
+        up = up + CELL
+    end
+    return false
+end
+
+// Una repisa por delante y por encima, al alcance del salto alto.
+//
+// Sin esto el piloto no sube ni una planta: solo reaccionaba a lo que le tapa
+// el paso, y las repisas de la escalera son de una fila y le pasan por encima
+// de la cabeza, asi que para el no existian. Quien juega si las ve, que es lo
+// que separa el trabajo del piloto (ensenar la mecanica) del de
+// Tools/verify_rooms.py (demostrar que la torre tiene solucion).
+func LedgeAheadUp(d)
+    var here = CellOf(player.y + PLAYER_H)
+    var dist = CELL
+    while (dist <= LOOK_LEDGE)
+        var cx = CellOf(AheadX(d, dist))
+        var up = CELL
+        while (up <= LOOK_CLIMB)
+            var cy = CellOf(player.y + PLAYER_H - 1 - up)
+            if (cy < here and StandableCell(cx, cy)) then return true end
+            up = up + CELL
+        end
+        dist = dist + CELL
+    end
+    return false
+end
+
+func GapAhead(d)
+    var px = AheadX(d, LOOK_GAP)
+    return not SolidAtPx(px, player.y + PLAYER_H)
+end
+
+// Que el suelo se acabe no significa que haya que saltar: al borde de una
+// plataforma volada tambien se acaba, y ahi lo que toca es dejarse caer. Sin
+// esta comprobacion el piloto se tiraba del saliente con un salto largo y
+// aterrizaba de lleno en el foso de pinchos, que es justo lo que el salto
+// pretendia evitar.
+//
+// El sitio de aterrizaje tiene que ser PISABLE, no solo solido: si no, el muro
+// del fondo de la sala cuenta como otro lado del hueco y el piloto salta
+// contra el.
+func GapCrossable(d)
+    var cy = CellOf(player.y + PLAYER_H)
+    var dist = LOOK_GAP
+    while (dist <= LOOK_REACH)
+        if (StandableCell(CellOf(AheadX(d, dist)), cy)) then return true end
+        dist = dist + CELL
+    end
+    return false
+end
+
+func DemoInput()
+    inLeft = false
+    inRight = false
+    inHigh = false
+    inLong = false
+
+    if (demoDir > 0) then inRight = true else inLeft = true end
+
+    var moved = Abs(player.x - demoLastX)
+    demoLastX = player.x
+
+    if (demoJumpCool > 0) then demoJumpCool = demoJumpCool - 1 end
+    if (demoTurnCool > 0) then demoTurnCool = demoTurnCool - 1 end
+
+    // Dos contadores de atasco, y hacen falta los dos: el corto se reinicia
+    // con cada salto, asi que con uno solo el piloto se queda saltando contra
+    // la misma pared para siempre sin llegar nunca a rendirse.
+    if (moved < 0.2 and player.onGround) then
+        demoStuck = demoStuck + 1
+    else
+        demoStuck = 0
+    end
+    if (moved < 0.2) then
+        demoNoProgress = demoNoProgress + 1
+    else
+        demoNoProgress = 0
+    end
+
+    // Ojo con la forma de este bloque: un `return` sin valor SOLO se puede
+    // poner justo antes de un `end`. Si le sigue un `elsif`, el parser intenta
+    // leer ese `elsif` como el valor devuelto y suelta "no prefix parse
+    // function for elsif" en una linea que a simple vista esta bien.
+    if (player.onGround and demoJumpCool <= 0) then
+        if (WallFlush(demoDir)) then
+            if (demoTurnCool <= 0) then
+                demoDir = -demoDir
+                demoTurnCool = 150
+                demoNoProgress = 0
+            end
+            return
+        end
+        var wallCol = WallColumnAhead(demoDir)
+        if (wallCol >= 0) then
+            if (WallClimbableAt(wallCol)) then
+                inHigh = true
+                demoJumpCool = 30
+                demoStuck = 0
+            elsif (demoTurnCool <= 0) then
+                // callejon sin salida: darse la vuelta en el sitio en vez de
+                // gastar dos segundos de saltos inutiles contra el muro
+                demoDir = -demoDir
+                demoTurnCool = 150
+                demoNoProgress = 0
+            end
+            return
+        end
+        if (GapAhead(demoDir) and GapCrossable(demoDir)) then
+            inLong = true
+            demoJumpCool = 30
+            demoStuck = 0
+            return
+        end
+        // Nada le tapa el paso, pero hay una repisa arriba: a subir, que es a
+        // lo que ha venido el robot.
+        if (LedgeAheadUp(demoDir)) then
+            inHigh = true
+            demoJumpCool = 30
+            demoStuck = 0
+            return
+        end
+    end
+
+    // Atascado pese al sondeo (una esquina rara, un bicho encima): probar los
+    // dos saltos alternando, que es lo unico que queda por intentar.
+    if (demoStuck > 8 and demoJumpCool <= 0 and player.onGround) then
+        if (demoAltJump) then inHigh = true else inLong = true end
+        demoAltJump = not demoAltJump
+        demoJumpCool = 30
+        demoStuck = 0
+        return
+    end
+
+    // Sigue sin progresar: darse la vuelta y buscar por el otro lado.
+    if (demoNoProgress > 120 and demoTurnCool <= 0) then
+        demoDir = -demoDir
+        demoTurnCool = 150
+        demoNoProgress = 0
+    end
+end
+
+// ----------------------------------------------------------------
+// Banco de calibracion de saltos
+// ----------------------------------------------------------------
+// Lanza los cuatro saltos posibles (alto y largo, parado y corriendo) desde el
+// mismo punto y mide altura, alcance y vuelo. Sustituye el decorado por un
+// suelo plano infinito: sobre el terreno real los arcos se cortan contra las
+// plataformas y los numeros no valen. Se enciende con la tecla C.
+const CALIB_RUN = 45            // ticks de carrerilla antes de saltar
+var calibStep = 0
+var calibPhase = 0
+var calibWait = 0
+var calibDone = false
+
+// Se pinta en el marcador durante el banco, asi que va en ingles como el resto
+func CalibLabel(s)
+    if (s == 0) then return "HIGH STILL" end
+    if (s == 1) then return "HIGH RUN" end
+    if (s == 2) then return "LONG STILL" end
+    return "LONG RUN"
+end
+
+func CalibReset()
+    calibStep = 0
+    calibPhase = 0
+    calibWait = 0
+    calibDone = false
+    player.x = 40.0
+    player.y = CALIB_FLOOR_ROW * CELL - PLAYER_H
+    player.vx = 0.0
+    player.vy = 0.0
+    println("")
+    println("banco de calibracion: cuatro saltos sobre suelo plano")
+end
+
+func CalibInput()
+    inLeft = false
+    inRight = false
+    inHigh = false
+    inLong = false
+    if (calibDone) then return end
+
+    var running = (calibStep == 1 or calibStep == 3)
+
+    if (calibPhase == 0) then
+        if (running) then inRight = true end
+        calibWait = calibWait + 1
+        if (calibWait >= CALIB_RUN) then
+            calibPhase = 1
+            calibWait = 0
+            if (running) then inRight = true end
+            if (calibStep < 2) then inHigh = true else inLong = true end
+        end
+    elsif (calibPhase == 1) then
+        // sin control en el aire: no se toca nada mientras vuela
+        if (not jumpActive) then
+            calibPhase = 2
+            calibWait = 0
+        end
+    else
+        calibWait = calibWait + 1
+        if (calibWait >= 15) then
+            calibStep = calibStep + 1
+            calibPhase = 0
+            calibWait = 0
+            if (calibStep > 3) then
+                calibDone = true
+                println("lo que pide la sala: foso de 40 px y escalon de 32 px")
+                println("banco terminado")
+            else
+                player.x = 40.0
+                player.y = CALIB_FLOOR_ROW * CELL - PLAYER_H
+                player.vx = 0.0
+                player.vy = 0.0
+            end
+        end
+    end
+end
+
+// ----------------------------------------------------------------
+// Lectura de entrada del tick
+// ----------------------------------------------------------------
+var demoCool = 0
+var calibCool = 0
+var restartCool = 0
+
+// Cualquier tecla de juego saca del piloto automatico, como el modo atraccion
+// de un recreativo: quien se sienta a jugar no tiene por que saberse antes que
+// la D lo apaga. La D sigue valiendo para volver a encenderlo.
+// Las cuatro acciones de juego, por indice, para poder sondearlas y desconfiar
+// de ellas UNA A UNA. Antes el sondeo era todo o nada y en la TTGO eso habria
+// sido peor que el fallo: un solo pin al aire dejaba sin uso los tres botones
+// buenos.
+const A_LEFT = 0
+const A_RIGHT = 1
+const A_HIGH = 2
+const A_LONG = 3
+const A_COUNT = 4
+
+func RawHeld(i)
+    if (not hasInput) then return false end
+    if (i == A_LEFT) then return Held(ACTION.LEFT, ACTION.ALT_LEFT) end
+    if (i == A_RIGHT) then return Held(ACTION.RIGHT, ACTION.ALT_RIGHT) end
+    if (i == A_HIGH) then return Held(ACTION.JUMP_HIGH, ACTION.ALT_HIGH) end
+    return Held(ACTION.JUMP_LONG, ACTION.ALT_LONG)
+end
+
+// Lo mismo, pero callando las acciones en las que el sondeo no confia
+func ActionHeld(i)
+    if (actionOk[i] == false) then return false end
+    return RawHeld(i)
+end
+
+func AnyPlayKeyHeld()
+    if (not hasInput) then return false end
+    var i = 0
+    while (i < A_COUNT)
+        if (ActionHeld(i)) then return true end
+        i = i + 1
+    end
+    return false
+end
+
+func ReadInput()
+    inHighPrev = inHigh
+    inLongPrev = inLong
+
+    if (calibMode) then
+        CalibInput()
+        return
+    end
+
+    // Al tocar una tecla de juego, el piloto se aparta sin decir nada: que el
+    // rotulo AUTOPILOT desaparezca del marcador ya lo cuenta, y la tecla para
+    // volver a encenderlo esta en la caratula.
+    //
+    // Pero hay que MANTENERLA unos ticks, no basta una lectura. En placa los
+    // botones son activos a nivel bajo y una sola lectura suelta --un pin con
+    // ruido, un rebote-- apagaba el piloto para el resto de la partida. Cinco
+    // ticks son 0,1 s: quien juega no lo nota y el ruido no llega.
+    if (demoMode) then
+        if (AnyPlayKeyHeld()) then
+            yieldHold = yieldHold + 1
+        else
+            yieldHold = 0
+        end
+        if (yieldHold >= YIELD_TICKS) then
+            demoMode = false
+            demoCool = 20
+            yieldHold = 0
+        end
+    end
+
+    if (demoMode) then
+        if (ROUTE_ON) then
+            RouteInput()
+        else
+            DemoInput()
+        end
+        return
+    end
+
+    inLeft = ActionHeld(A_LEFT)
+    inRight = ActionHeld(A_RIGHT)
+    inHigh = ActionHeld(A_HIGH)
+    inLong = ActionHeld(A_LONG)
+end
+
+// Teclas de modo, por nivel y con enfriamiento en vez de por flanco: aqui no
+// importa que se repita mientras se mantiene, y asi tampoco dependen de
+// Input.justPressed.
+func ReadModeKeys()
+    if (not hasInput) then return end
+
+    if (demoCool > 0) then demoCool = demoCool - 1 end
+    if (calibCool > 0) then calibCool = calibCool - 1 end
+    if (restartCool > 0) then restartCool = restartCool - 1 end
+
+    if (Input.pressed(ACTION.TOGGLE_DEMO) and demoCool <= 0) then
+        demoMode = not demoMode
+        demoCool = 20
+    end
+    if (Input.pressed(ACTION.TOGGLE_CALIB) and calibCool <= 0) then
+        calibMode = not calibMode
+        calibCool = 20
+        if (calibMode) then
+            CalibReset()
+        else
+            Restart()
+        end
+    end
+    if (Input.pressed(ACTION.RESTART) and restartCool <= 0) then
+        restartCool = 20
+        Restart()
+    end
+end
+
+// ----------------------------------------------------------------
+// Habitaciones
+// ----------------------------------------------------------------
+// Pantalla fija: al salir por un borde se cambia de habitacion y se aparece
+// en el opuesto. Si por ese lado no hay vecino, el jugador se queda dentro.
+func CheckRoomChange()
+    if (calibMode) then return end
+
+    if (player.x + PLAYER_W <= 0) then
+        var d = WORLD_LINK_L[roomIdx]
+        if (d >= 0) then
+            LoadRoom(d)
+            player.x = PLAY_W - PLAYER_W
+        else
+            player.x = 0
+        end
+    elsif (player.x >= PLAY_W) then
+        var d = WORLD_LINK_R[roomIdx]
+        if (d >= 0) then
+            LoadRoom(d)
+            player.x = 0
+        else
+            player.x = PLAY_W - PLAYER_W
+        end
+    end
+
+    if (player.y + PLAYER_H <= 0) then
+        var d = WORLD_LINK_U[roomIdx]
+        if (d >= 0) then
+            LoadRoom(d)
+            // Subiendo NO vale aparecer en el borde de abajo: ese borde es el
+            // hueco por el que se acaba de entrar, y el robot volveria a
+            // caerse por el. Cada planta declara en su mapa donde se aparece
+            // al llegar desde abajo, de pie y al lado del hueco.
+            if (WORLD_UP_X[d] >= 0) then
+                player.x = WORLD_UP_X[d]
+                player.y = WORLD_UP_Y[d]
+            else
+                player.y = PLAY_H - PLAYER_H
+            end
+            player.vx = 0.0
+            player.vy = 0.0
+        else
+            player.y = 0
+        end
+    elsif (player.y >= PLAY_H) then
+        var d = WORLD_LINK_D[roomIdx]
+        if (d >= 0) then
+            // Bajando si vale el borde opuesto: los huecos de techo y suelo
+            // estan alineados columna a columna, asi que se sigue cayendo.
+            LoadRoom(d)
+            player.y = 0
+        else
+            player.y = PLAY_H - PLAYER_H
+            player.vy = 0.0
+        end
+    end
+end
+
+// ----------------------------------------------------------------
+// Bateria y golpes
+// ----------------------------------------------------------------
+func Damage()
+    if (hitCool > 0) then return end
+    hitCool = HIT_COOLDOWN
+    battery = battery - BATTERY_HIT
+    SfxHit()
+    if (battery <= 0) then
+        battery = 0
+        gameOver = true
+        deadTicks = DEAD_TICKS
+        MusicGameOver()
+    end
+end
+
+func UpdatePlats()
+    foreach (var p in plats)
+        p.update()
+    end
+end
+
+func PlatCarry()
+    // Se comprueba DESPUES de mover las plataformas y ANTES de mover al robot:
+    // la sonda son tres pixeles alrededor de los pies, no uno. Con gravedad
+    // fraccionaria el contacto con el suelo solo se da en ticks alternos, y con
+    // un pixel de sonda el robot se bajaria solo de la plataforma cada dos ticks.
+    foreach (var p in plats)
+        if (Overlap(player.x, player.y + PLAYER_H - 1.0, PLAYER_W, 3.0,
+                    p.x, p.y, PLAT_W, PLAT_H)) then
+            player.Ride(p)
+        end
+    end
+end
+
+func CheckHazards()
+    if (BoxHitsHurt(player.x, player.y, PLAYER_W, PLAYER_H)) then
+        Damage()
+        return
+    end
+    foreach (var d in drones)
+        if (Overlap(player.x, player.y, PLAYER_W, PLAYER_H, d.x, d.y, droneW, droneH)) then
+            Damage()
+            return
+        end
+    end
+end
+
+func CheckLevers()
+    var i = 0
+    var n = len(leverX)
+    while (i < n)
+        if (leverOn[i] == false) then
+            if (Overlap(player.x, player.y, PLAYER_W, PLAYER_H,
+                        leverX[i], leverY[i], leverW, leverH)) then
+                leverOn[i] = true
+                leversDone = leversDone + 1
+                SfxLever()
+                if (leversDone >= WORLD_LEVERS_TOTAL and (not doorOpen)) then
+                    doorOpen = true
+                    SfxDoor()
+                end
+            end
+        end
+        i = i + 1
+    end
+end
+
+func CheckLives()
+    if (not LIVES_ON) then return end
+    var i = 0
+    var n = len(lifeX)
+    while (i < n)
+        if (lifeTaken[i] == false) then
+            if (Overlap(player.x, player.y, PLAYER_W, PLAYER_H,
+                        lifeX[i], lifeY[i], lifeW, lifeH)) then
+                lifeTaken[i] = true
+                battery = battery + BATTERY_LIFE
+                if (battery > BATTERY_MAX) then battery = BATTERY_MAX end
+                SfxLife()
+            end
+        end
+        i = i + 1
+    end
+end
+
+func CheckLoot()
+    if (won or lootX < 0) then return end
+    if (Overlap(player.x, player.y, PLAYER_W, PLAYER_H, lootX, lootY, lootW, lootH)) then
+        won = true
+        winTicks = WIN_TICKS
+        MusicWin()
+    end
+end
+
+func Restart()
+    battery = BATTERY_MAX
+    hitCool = 0
+    gameOver = false
+    deadTicks = 0
+    leversDone = 0
+    calibMode = false
+    doorOpen = false
+    won = false
+    winTicks = 0
+    routeChunk = 0
+    routeIdx = 0
+    routeLeft = 0
+    routeDone = false
+
+    // las palancas vuelven a estar sin dar, y las vidas otra vez en su sitio
+    var r = 0
+    while (r < WORLD_ROOMS)
+        var lst = onAll[r]
+        var i = 0
+        while (i < len(lst))
+            lst[i] = false
+            i = i + 1
+        end
+        var lv = takenLives[r]
+        var i4 = 0
+        while (i4 < len(lv))
+            lv[i4] = false
+            i4 = i4 + 1
+        end
+        r = r + 1
+    end
+
+    LoadRoom(0)
+    player.reset()
+    // La musica se rearranca desde el principio: al morir y al ganar se para (los
+    // dos efectos se quedan el canal), asi que reiniciar tiene que volver a
+    // ponerla o la segunda partida se juega en silencio.
+    StartMusic()
+end
+
+// ----------------------------------------------------------------
+// Dibujo
+// ----------------------------------------------------------------
+// La palanca se dibuja SIEMPRE, dada o sin dar, cambiando el fotograma. Es lo
+// que la separa de un objeto que se recoge: al volver a entrar en una sala se
+// ve de un vistazo lo que llevas hecho de ella.
+func DrawLevers()
+    var i = 0
+    var n = len(leverX)
+    while (i < n)
+        // Un solo dibujo para todas: la maneta se lee igual apoyada que
+        // montada en un mueble, y los dos fotogramas ya son sus dos
+        // posiciones. Solo la colgada se voltea, para que la peana quede
+        // arriba.
+        if (leverOn[i]) then sprLever.frame = 1 else sprLever.frame = 0 end
+        sprLever.flipY = (leverDir[i] == 3)
+        sprLever.x = PLAY_X + leverX[i] + leverW / 2
+        sprLever.y = PLAY_Y + leverY[i] + leverH / 2
+        draw.sprite(sprLever)
+        i = i + 1
+    end
+end
+
+func DrawLives()
+    if (not LIVES_ON) then return end
+    var i = 0
+    var n = len(lifeX)
+    while (i < n)
+        if (lifeTaken[i] == false) then
+            sprLife.frame = (tickCount div 10) % 2
+            sprLife.x = PLAY_X + lifeX[i] + lifeW / 2
+            sprLife.y = PLAY_Y + lifeY[i] + lifeH / 2
+            draw.sprite(sprLife)
+        end
+        i = i + 1
+    end
+end
+
+// La puerta ancla por el centro como cualquier sprite, y ocupa el rectangulo
+// entero de celdas que marco el mapa.
+func DrawDoor()
+    if (doorC0 < 0) then return end
+    var w = (doorC1 - doorC0 + 1) * CELL
+    var h = (doorR1 - doorR0 + 1) * CELL
+    if (doorOpen) then sprDoor.frame = 1 else sprDoor.frame = 0 end
+    sprDoor.x = PLAY_X + doorC0 * CELL + w / 2
+    sprDoor.y = PLAY_Y + doorR0 * CELL + h / 2
+    draw.sprite(sprDoor)
+end
+
+func DrawLoot()
+    if (lootX < 0 or won) then return end
+    sprLoot.frame = (tickCount div 10) % 2
+    sprLoot.x = PLAY_X + lootX + lootW / 2
+    sprLoot.y = PLAY_Y + lootY + lootH / 2
+    draw.sprite(sprLoot)
+end
+
+func DrawBar()
+    draw.color = C_WHITE
+    draw.rect(BAR_X, BAR_Y, BAR_W, BAR_H, true)
+    draw.color = C_BLACK
+    draw.rect(BAR_IN_X, BAR_IN_Y, BAR_IN_W, BAR_IN_H, true)
+
+    // El color va por posicion y no por porcentaje, y la barra se vacia de
+    // derecha a izquierda: ver rojo es estar a punto de quedarse seco.
+    var e = Clamp(battery, 0, BATTERY_MAX)
+    var red = Clamp(e, 0, BAR_RED)
+    var mag = Clamp(e - BAR_RED, 0, BAR_MAGENTA - BAR_RED)
+    var yel = Clamp(e - BAR_MAGENTA, 0, BAR_IN_W - BAR_MAGENTA)
+
+    if (red > 0) then
+        draw.color = C_RED
+        draw.rect(BAR_IN_X, BAR_IN_Y, red, BAR_IN_H, true)
+    end
+    if (mag > 0) then
+        draw.color = C_MAGENTA
+        draw.rect(BAR_IN_X + BAR_RED, BAR_IN_Y, mag, BAR_IN_H, true)
+    end
+    if (yel > 0) then
+        draw.color = C_YELLOW
+        draw.rect(BAR_IN_X + BAR_MAGENTA, BAR_IN_Y, yel, BAR_IN_H, true)
+    end
+end
+
+func DrawHud()
+    draw.color = C_BLACK
+    draw.rect(0, HUD_Y, SCREEN_W, HUD_H, true)
+    draw.color = C_BLUE
+    draw.rect(0, HUD_Y, SCREEN_W, 2, true)
+
+    DrawBar()
+
+    draw.color = C_BYELLOW
+    var got = leversDone.toString()
+    var all = WORLD_LEVERS_TOTAL.toString()
+    // Todo lo que se dibuja en pantalla va en INGLES; los comentarios y las
+    // trazas de consola siguen en castellano, que es la lengua del proyecto.
+    draw.text(140, HUD_ROW1, "LEVERS " + got + "/" + all)
+
+    draw.color = C_CYAN
+    draw.text(8, HUD_ROW2, WORLD_NAME[roomIdx])
+
+    // A 8,4 px por caracter, el nombre de sala mas largo ("The Spike Hall", 14)
+    // ocupa hasta el pixel 126, asi que el segundo rotulo arranca en el 136. Con
+    // los nombres en castellano cabia en el 96 y al traducirlos se solapaban.
+    draw.color = C_BWHITE
+    if (calibMode) then
+        draw.text(136, HUD_ROW2, "CALIB " + CalibLabel(calibStep))
+    elsif (demoMode) then
+        draw.text(136, HUD_ROW2, "AUTOPILOT (D)")
+    end
+end
+
+// ----------------------------------------------------------------
+// Caratula
+// ----------------------------------------------------------------
+// El dibujo entero es Images/Cover.bmp (320x240, lo hace Tools/build_cover.py).
+// Aqui solo van los rotulos, porque uno parpadea y eso no se puede grabar en un
+// mapa de bits.
+func DrawTitle()
+    draw.cls(C_BLACK)
+    if (coverBmp != nil) then
+        // draw.bitmap es (x, y, bitmap) y no (bitmap, x, y): con el orden malo no
+        // pinta nada y no da ningun error.
+        draw.bitmap(0, 0, coverBmp)
+    else
+        // Sin caratula (en placa son 230 KB de mapa de bits y puede no haber RAM)
+        // la pantalla sigue funcionando con el titulo puesto a mano. Vale mas un
+        // titulo sobrio que una pantalla en negro y un juego que no arranca.
+        draw.color = C_BWHITE
+        draw.text(88, 70, "JARU PHANTOM")
+        draw.color = C_CYAN
+        draw.text(100, 100, "TOWER HEIST")
+    end
+
+    if ((titleTicks div 25) % 2 == 0) then
+        draw.color = C_BYELLOW
+        draw.text(92, 210, "PRESS ANY KEY")
+    end
+    draw.color = C_WHITE
+    draw.text(36, 228, "O P  Z HIGH  SHIFT LONG  D AUTO")
+    Display.update()
+end
+
+// La caratula lee el teclado DE VERDAD, no la ruta del piloto: es la unica
+// pantalla donde el piloto no manda.
+func TitleKey()
+    return AnyPlayKeyHeld()
+end
+
+func GoTitle()
+    state = ST_TITLE
+    titleTicks = 0
+    gameOver = false
+    won = false
+    deadTicks = 0
+    winTicks = 0
+    MusicTitle()
+end
+
+func StartGame()
+    state = ST_PLAY
+    Restart()
+end
+
+// Sondeo de los botones, solo en placa: en Windows el teclado no flota, y si
+// alguien arranca el juego con una tecla apretada no hay que castigarle por ello.
+//
+// Va accion por accion. En la TTGO hay tres botones de verdad y un mapeo mal
+// puesto bastaba para dejarlos todos inservibles si el sondeo fuese global.
+func ProbeInput()
+    if (platform() == HW_WIN32) then return end
+    if (probeTicks >= INPUT_PROBE) then return end
+    probeTicks = probeTicks + 1
+    var i = 0
+    while (i < A_COUNT)
+        if (RawHeld(i)) then probeStuck[i] = probeStuck[i] + 1 end
+        i = i + 1
+    end
+    if (probeTicks < INPUT_PROBE) then return end
+    // Mas de la mitad de las lecturas dicen "pulsado" antes de que empiece la
+    // partida: eso no es un boton, es un pin al aire.
+    var j = 0
+    while (j < A_COUNT)
+        if (probeStuck[j] * 2 > INPUT_PROBE) then
+            actionOk[j] = false
+            println("accion ", j, ": pin al aire (", probeStuck[j], " de ",
+                    INPUT_PROBE, " lecturas pulsadas al arrancar); se ignora")
+        end
+        j = j + 1
+    end
+end
+
+func TitleTick()
+    titleTicks = titleTicks + 1
+    // El sondeo va ANTES de mirar la tecla: si no, un pin al aire da la caratula
+    // por saltada en el primer tick y no hay ocasion de descubrirlo.
+    ProbeInput()
+    if (probeTicks < INPUT_PROBE and platform() != HW_WIN32) then return end
+    if (TitleKey() or titleTicks >= TITLE_AUTO) then StartGame() end
+end
+
+func DrawGame()
+    if (state == ST_TITLE) then
+        DrawTitle()
+        return
+    end
+    draw.cls(C_BLACK)
+    if (calibMode) then
+        // el banco no dibuja decorado: solo la linea de suelo
+        draw.color = C_YELLOW
+        draw.rect(0, CALIB_FLOOR_ROW * CELL, PLAY_W, 2, true)
+    else
+        draw.tilemap(roomTiles, roomTileset, 0)
+        DrawDoor()
+        DrawLoot()
+        DrawLevers()
+        DrawLives()
+        foreach (var p in plats)
+            p.draw()
+        end
+        foreach (var d in drones)
+            d.draw()
+        end
+    end
+    player.draw()
+    DrawHud()
+
+    if (gameOver) then
+        draw.color = C_BRED
+        draw.text(116, 88, "BATTERY DEAD")
+    elsif (won) then
+        draw.color = C_BYELLOW
+        draw.text(136, 88, "LOOT!")
+    end
+
+    Display.update()
+end
+
+// ----------------------------------------------------------------
+// Tick de 50 Hz
+// ----------------------------------------------------------------
+func Tick()
+    tickCount = tickCount + 1
+
+    if (state == ST_TITLE) then
+        TitleTick()
+        return
+    end
+
+    ReadModeKeys()
+
+    // Al acabarse la pausa se vuelve a la CARATULA, no directo a jugar: es donde
+    // suena su musica y donde se decide volver a empezar.
+    if (gameOver) then
+        deadTicks = deadTicks - 1
+        if (deadTicks <= 0) then GoTitle() end
+        return
+    end
+    if (won) then
+        winTicks = winTicks - 1
+        if (winTicks <= 0) then GoTitle() end
+        return
+    end
+
+    ReadInput()
+    // Las plataformas se mueven antes que el robot y arrastran al que va
+    // montado: al reves el robot se moveria contra la posicion del tick pasado
+    // y se colaria medio pixel dentro de la plataforma en cada viaje.
+    if (not calibMode) then
+        UpdatePlats()
+        PlatCarry()
+    end
+    player.update()
+
+    if (calibMode) then return end
+
+    CheckRoomChange()
+
+    foreach (var d in drones)
+        d.update()
+    end
+
+    if (hitCool > 0) then hitCool = hitCool - 1 end
+    CheckHazards()
+    CheckLevers()
+    CheckLives()
+    CheckLoot()
+
+end
+
+// ================================================================
+// Main
+// ================================================================
+
+SetupInput()
+
+Display.viewWidth = SCREEN_W
+Display.viewHeight = SCREEN_H
+Display.open(SCREEN_W, SCREEN_H)
+Display.autoClear = false
+Display.showBG = false
+Display.mode(2)
+draw.colorBG = C_BLACK
+Display.update()
+
+sprPlayer = SinAutoAnim(Sprite.load("Sprites/Robot.spr"))
+sprLever = SinAutoAnim(Sprite.load("Sprites/Lever.spr"))
+sprLife = SinAutoAnim(Sprite.load("Sprites/Life.spr"))
+sprDrone = SinAutoAnim(Sprite.load("Sprites/Drone.spr"))
+sprPlat = SinAutoAnim(Sprite.load("Sprites/Plat.spr"))
+sprDoor = SinAutoAnim(Sprite.load("Sprites/Door.spr"))
+sprLoot = SinAutoAnim(Sprite.load("Sprites/Loot.spr"))
+leverW = sprLever.width
+leverH = sprLever.height
+lifeW = sprLife.width
+lifeH = sprLife.height
+droneW = sprDrone.width
+droneH = sprDrone.height
+lootW = sprLoot.width
+lootH = sprLoot.height
+
+// una lista de marcas de pieza por habitacion, para que lo recogido siga
+// recogido al volver a entrar
+onAll = []
+takenLives = []
+var r = 0
+while (r < WORLD_ROOMS)
+    var lst = []
+    var i = 0
+    while (i < len(WORLD_LEVERS[r]))
+        lst.append(false)
+        i = i + 2
+    end
+    onAll.append(lst)
+
+    var lv = []
+    var i4 = 0
+    while (i4 < len(WORLD_LIVES[r]))
+        lv.append(false)
+        i4 = i4 + 2
+    end
+    takenLives.append(lv)
+    r = r + 1
+end
+
+LoadRoom(0)
+player = ObjPlayer()
+
+// Estado del sondeo de botones, una entrada por accion de juego
+var ai = 0
+while (ai < A_COUNT)
+    probeStuck.append(0)
+    actionOk.append(true)
+    ai = ai + 1
+end
+
+coverBmp = Bitmap.load("Images/Cover.bmp")
+
+InitSound()
+// Se arranca en la CARATULA, con su cancion. La del juego la pone Restart()
+// cuando se pulsa una tecla (o cuando salta el arranque automatico).
+MusicTitle()
+
+if (calibMode) then CalibReset() end
+
+var lastTick = clock()
+
+while (true)
+    var now = clock()
+    var due = now - lastTick
+
+    // Paso fijo: tantos ticks de 50 Hz como toque, con tope para que un paron
+    // no dispare una avalancha de actualizaciones.
+    var steps = 0
+    while (due >= TICK_MS and steps < 5)
+        Tick()
+        lastTick = lastTick + TICK_MS
+        due = now - lastTick
+        steps = steps + 1
+    end
+
+    DrawGame()
+end

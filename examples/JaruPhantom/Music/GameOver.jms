@@ -1,0 +1,185 @@
+{
+ "format": "tracker",
+ "version": 1,
+ "tickMs": 30,
+ "volume": 200,
+ "loop": false,
+ "loopStartRow": 0,
+ "rowTicks": 4,
+ "instruments": [
+  {
+   "id": 0,
+   "type": "tone",
+   "wave": "pulse",
+   "volume": 95,
+   "duty": 45,
+   "attackMs": 6,
+   "decayMs": 120,
+   "sustain": 150,
+   "releaseMs": 70,
+   "vibratoDepth": 0,
+   "vibratoRate": 0,
+   "vibratoDelay": 0,
+   "pwmDepth": 70,
+   "pwmRate": 40
+  },
+  {
+   "id": 1,
+   "type": "tone",
+   "wave": "triangle",
+   "volume": 170,
+   "duty": 50,
+   "attackMs": 2,
+   "decayMs": 140,
+   "sustain": 120,
+   "releaseMs": 40,
+   "vibratoDepth": 0,
+   "vibratoRate": 0,
+   "vibratoDelay": 0,
+   "pwmDepth": 0,
+   "pwmRate": 0
+  },
+  {
+   "id": 4,
+   "type": "noise",
+   "volume": 120,
+   "noiseMode": "short",
+   "decayTicks": 2,
+   "attackMs": 0,
+   "decayMs": 0,
+   "sustain": 255,
+   "releaseMs": 0
+  }
+ ],
+ "rows": [
+  {
+   "ch0": {
+    "note": 69,
+    "inst": 0
+   },
+   "ch1": {
+    "note": 45,
+    "inst": 1
+   },
+   "noise": {
+    "period": 20,
+    "inst": 4
+   }
+  },
+  {
+   "noise": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 72
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 67
+   },
+   "ch1": {
+    "note": 43
+   },
+   "noise": {
+    "period": 20
+   }
+  },
+  {
+   "noise": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 71
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 65
+   },
+   "ch1": {
+    "note": 41
+   },
+   "noise": {
+    "period": 20
+   }
+  },
+  {
+   "noise": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 69
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 64
+   },
+   "ch1": {
+    "note": 40
+   },
+   "noise": {
+    "period": 20
+   }
+  },
+  {
+   "noise": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 68
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 45
+   },
+   "ch1": {
+    "note": 33
+   },
+   "noise": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {}
+ ]
+}

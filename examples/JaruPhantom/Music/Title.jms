@@ -1,0 +1,355 @@
+{
+ "format": "tracker",
+ "version": 1,
+ "tickMs": 45,
+ "volume": 185,
+ "loop": true,
+ "loopStartRow": 0,
+ "rowTicks": 4,
+ "instruments": [
+  {
+   "id": 0,
+   "type": "tone",
+   "wave": "pulse",
+   "volume": 150,
+   "duty": 25,
+   "attackMs": 4,
+   "decayMs": 90,
+   "sustain": 190,
+   "releaseMs": 60,
+   "vibratoDepth": 28,
+   "vibratoRate": 90,
+   "vibratoDelay": 140,
+   "pwmDepth": 0,
+   "pwmRate": 0
+  },
+  {
+   "id": 1,
+   "type": "tone",
+   "wave": "triangle",
+   "volume": 170,
+   "duty": 50,
+   "attackMs": 2,
+   "decayMs": 140,
+   "sustain": 120,
+   "releaseMs": 40,
+   "vibratoDepth": 0,
+   "vibratoRate": 0,
+   "vibratoDelay": 0,
+   "pwmDepth": 0,
+   "pwmRate": 0
+  },
+  {
+   "id": 3,
+   "type": "tone",
+   "wave": "sine",
+   "volume": 120,
+   "duty": 50,
+   "attackMs": 120,
+   "decayMs": 400,
+   "sustain": 170,
+   "releaseMs": 300,
+   "vibratoDepth": 18,
+   "vibratoRate": 50,
+   "vibratoDelay": 300,
+   "pwmDepth": 0,
+   "pwmRate": 0
+  }
+ ],
+ "rows": [
+  {
+   "ch0": {
+    "off": true
+   },
+   "ch1": {
+    "note": 45,
+    "inst": 1
+   },
+   "ch3": {
+    "note": 72,
+    "inst": 3
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch3": {
+    "note": 76
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   },
+   "ch1": {
+    "note": 45
+   },
+   "ch3": {
+    "note": 72
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 81,
+    "inst": 0
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 88
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 93
+   },
+   "ch3": {
+    "note": 76
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch1": {
+    "note": 41
+   },
+   "ch3": {
+    "note": 69
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch3": {
+    "note": 72
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   },
+   "ch1": {
+    "note": 41
+   },
+   "ch3": {
+    "note": 69
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 77
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 84
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 89
+   },
+   "ch3": {
+    "note": 72
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch1": {
+    "note": 43
+   },
+   "ch3": {
+    "note": 71
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch3": {
+    "note": 74
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   },
+   "ch1": {
+    "note": 43
+   },
+   "ch3": {
+    "note": 71
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 79
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 86
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 91
+   },
+   "ch3": {
+    "note": 74
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch1": {
+    "note": 40
+   },
+   "ch3": {
+    "note": 68
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch3": {
+    "note": 71
+   }
+  },
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   },
+   "ch1": {
+    "note": 40
+   },
+   "ch3": {
+    "note": 68
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "note": 76
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 83
+   }
+  },
+  {},
+  {
+   "ch0": {
+    "note": 88
+   },
+   "ch3": {
+    "note": 71
+   }
+  },
+  {},
+  {},
+  {},
+  {
+   "ch0": {
+    "off": true
+   }
+  },
+  {},
+  {},
+  {}
+ ]
+}
